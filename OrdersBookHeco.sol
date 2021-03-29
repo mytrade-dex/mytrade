@@ -379,6 +379,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
     IUniswapV2Router02 immutable public uniswapV2Router02;
     IUniswapV2Factory immutable public uniswapV2Factory;
     address immutable public whtAddr;
+    address public feeAddr;
     uint256 constant UINT256_MAX = ~uint256(0);
 
     struct Order{
@@ -403,6 +404,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
     mapping (address  => uint256) tokenPairIndexMap;// token0地址=>tokenPair数组下标
     constructor(address _whtAddr,address _uniswapV2Router02,address _uniswapV2Factory) payable  {
         whtAddr=_whtAddr;
+        feeAddr=msg.sender;
         tokenPairArray.push();
         uniswapV2Router02=IUniswapV2Router02(_uniswapV2Router02);
         uniswapV2Factory=IUniswapV2Factory(_uniswapV2Factory);
@@ -410,6 +412,9 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
     receive() external payable { 
     }
     fallback(bytes calldata _input) external payable returns (bytes memory _output){
+    }
+    function setFeeAddr(address _feeAddr)public onlyOwner {
+        feeAddr=_feeAddr;
     }
     function cancelOrder(
         address _fromTokenAddr,// 卖出token地址
@@ -504,7 +509,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         uint256 _toTokenNumber
     )public override payable returns(bool) {
         (bool b,uint256 orderIndex)=addOrder(_fromTokenAddr,_toTokenAddr,
-            _targetOrderIndex,_fromTokenNumber,_toTokenNumber/100000);
+            _targetOrderIndex,_fromTokenNumber,_toTokenNumber.div(100000));
         address pairAddr=getPair(_fromTokenAddr,_toTokenAddr);
         uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
         require(b&&tokenPairArray[tokenPairIndex].orderMap[orderIndex].toTokenSum>=_toTokenNumber);
@@ -514,8 +519,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
     function getToNum(Order memory bo) internal pure returns (uint256 _to){
         _to=bo.toTokenNumber.mul(
             bo.originalNumbers[bo.originalNumbers.length-1]
-        )/bo.fromTokenNumber;
-        _to=_to.mul(1003)/1000
+        ).div(bo.fromTokenNumber).mul(1000).div(997);
     }
      /**
      * Returns whether the target address is a contract
@@ -557,8 +561,9 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         // safeApprove should only be called when setting an initial allowance,
         // or when resetting it to zero. To increase and decrease it, use
         // 'safeIncreaseAllowance' and 'safeDecreaseAllowance'
-        require((value == 0) || (token.allowance(address(this), spender) == 0));
-        callOptionalReturn(token, abi.encodeWithSelector(token.approve.selector, spender, value));
+        if(token.allowance(address(this), spender) == 0){
+        	callOptionalReturn(token, abi.encodeWithSelector(token.approve.selector, spender, value));
+        }
     }
     /**
      * @dev Imitates a Solidity high-level call (i.e. a regular function call to a contract), relaxing the requirement
@@ -647,6 +652,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
             _tokenPair.lastIndex[o.fromTokenAddr]=orderIndex;
             (uint256 reserveA,uint256 reserveB)=UniswapV2Library.getReserves(
                 address(uniswapV2Factory),o.fromTokenAddr, o.toTokenAddr);
+            uint256 fee=0;   
             uint256 cInAmount=getInAmount(o.fromTokenNumber,o.toTokenNumber,reserveA,reserveB);//计算达到当前订单价格需要付出的币数量
             if(cInAmount>1){//如果流动池价格低于当前价格
                 {
@@ -668,13 +674,9 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                                         safeTransfer(
                                             IERC20(bo.toTokenAddr),
                                             bo.maker,
-                                            getToNum(bo).mul(1000)/1003
+                                            getToNum(bo).mul(997).div(1000)
                                         );
-                                        safeTransfer(//千分之三扣除手续费
-                                            IERC20(bo.toTokenAddr),
-                                            owner(),
-                                            getToNum(bo).mul(3)/1003
-                                        );
+                                        fee=fee.add(getToNum(bo).mul(3).div(1000));
                                         inAmountSum=inAmountSum.add(getToNum(bo));
                                         outAmountSum=outAmountSum.add(bo.originalNumbers[bo.originalNumbers.length-1]);
                                         uint newBIndex=_tokenPair.orderNextSequence[tokenBIndex];
@@ -683,7 +685,8 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                                         if(newBIndex!=0){
                                             _tokenPair.orderPreSequence[newBIndex]=0;
                                         }
-                                        _tokenPair.orderMap[tokenBIndex].toTokenSum=getToNum(bo).add(_tokenPair.orderMap[tokenBIndex].toTokenSum);
+                                        _tokenPair.orderMap[tokenBIndex].toTokenSum=
+                                        getToNum(bo).mul(997).div(1000).add(_tokenPair.orderMap[tokenBIndex].toTokenSum);
                                         _tokenPair.orderMap[tokenBIndex].originalNumbers.push(0);
                                         _tokenPair.orderMap[tokenBIndex].timestamps.push(block.timestamp);
                                         tokenBIndex=newBIndex;
@@ -700,19 +703,15 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                                         safeTransfer(
                                             IERC20(bo.toTokenAddr),
                                             bo.maker,
-                                            tokenANum.mul(1000)/1003
+                                            tokenANum.mul(997).div(1000)
                                         );
-                                        safeTransfer(//千分之三扣除手续费
-                                            IERC20(bo.toTokenAddr),
-                                            owner(),
-                                            tokenANum.mul(3)/1003
-                                        );
+                                        fee=fee.add(tokenANum.mul(3).div(1000));
                                         inAmountSum=inAmountSum.add(tokenANum);
-                                        uint256 tokenBNum=tokenANum.mul(bo.fromTokenNumber) / bo.toTokenNumber;
+                                        uint256 tokenBNum=tokenANum.mul(997).div(1000).mul(bo.fromTokenNumber) / bo.toTokenNumber;
                                         outAmountSum=outAmountSum.add(tokenBNum);
                                         _tokenPair.orderMap[tokenBIndex].originalNumbers.push(
                                             bo.originalNumbers[bo.originalNumbers.length-1].sub(tokenBNum));
-                                        _tokenPair.orderMap[tokenBIndex].toTokenSum=tokenANum.add(bo.toTokenSum);
+                                        _tokenPair.orderMap[tokenBIndex].toTokenSum=tokenANum.mul(997).div(1000).add(bo.toTokenSum);
                                         _tokenPair.orderMap[tokenBIndex].timestamps.push(block.timestamp);
                                         tokenANum=0;//停止向上遍列
                                     }
@@ -744,6 +743,13 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                             o.maker,
                             outAmountSum
                         );
+                        if(fee>0){
+		                    safeTransfer(
+		                        IERC20(o.fromTokenAddr),
+		                        feeAddr,
+		                        fee
+		                    );
+		                }
                         _tokenPair.orderMap[orderIndex].toTokenSum=outAmountSum.add(
                             _tokenPair.orderMap[orderIndex].toTokenSum);
                         _tokenPair.orderMap[orderIndex].originalNumbers.push(
@@ -765,13 +771,9 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                             safeTransfer(
                                 IERC20(bo.toTokenAddr),
                                 bo.maker,
-                                getToNum(bo).mul(1000)/1003
+                                getToNum(bo).mul(997).div(1000)
                             );
-                            safeTransfer(//千分之三扣除手续费
-                                IERC20(bo.toTokenAddr),
-                                owner(),
-                                getToNum(bo).mul(3)/1003
-                            );
+                            fee=fee.add(getToNum(bo).mul(3).div(1000));
                             inAmountSum=inAmountSum.add(getToNum(bo));
                             outAmountSum=outAmountSum.add(bo.originalNumbers[bo.originalNumbers.length-1]);
                             uint newBIndex=_tokenPair.orderNextSequence[tokenBIndex];
@@ -780,7 +782,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                             if(newBIndex!=0){
                                 _tokenPair.orderPreSequence[newBIndex]=0;
                             }
-                            _tokenPair.orderMap[tokenBIndex].toTokenSum=getToNum(bo).add(_tokenPair.orderMap[tokenBIndex].toTokenSum);
+                            _tokenPair.orderMap[tokenBIndex].toTokenSum=getToNum(bo).mul(997).div(1000).add(_tokenPair.orderMap[tokenBIndex].toTokenSum);
                             _tokenPair.orderMap[tokenBIndex].originalNumbers.push(0);
                             _tokenPair.orderMap[tokenBIndex].timestamps.push(block.timestamp);
                             tokenBIndex=newBIndex;
@@ -788,19 +790,15 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                             safeTransfer(
                                 IERC20(bo.toTokenAddr),
                                 bo.maker,
-                                tokenANum.mul(1000)/1003
+                                tokenANum.mul(997).div(1000)
                             );
-                            safeTransfer(//千分之三扣除手续费
-                                IERC20(bo.toTokenAddr),
-                                owner(),
-                                tokenANum.mul(3)/1003
-                            );
+                            fee=fee.add(tokenANum.mul(3).div(1000));
                             inAmountSum=o.fromTokenNumber;
                             uint256 tokenBNum=tokenANum.mul(bo.fromTokenNumber) / bo.toTokenNumber;
                             outAmountSum=outAmountSum.add(tokenBNum);
                             _tokenPair.orderMap[tokenBIndex].originalNumbers.push(
                                 bo.originalNumbers[bo.originalNumbers.length-1].sub(tokenBNum));
-                            _tokenPair.orderMap[tokenBIndex].toTokenSum=tokenANum.add(bo.toTokenSum);
+                            _tokenPair.orderMap[tokenBIndex].toTokenSum=tokenANum.mul(997).div(1000).add(bo.toTokenSum);
                             _tokenPair.orderMap[tokenBIndex].timestamps.push(block.timestamp);
                             break;
                         }
@@ -814,6 +812,13 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                         o.maker,
                         outAmountSum
                     );
+                    if(fee>0){
+                        safeTransfer(
+                            IERC20(o.fromTokenAddr),
+                            feeAddr,
+                            fee
+                        );
+                    }
                     _tokenPair.orderMap[orderIndex].toTokenSum=outAmountSum.add(
                         _tokenPair.orderMap[orderIndex].toTokenSum);
                     _tokenPair.orderMap[orderIndex].originalNumbers.push(
@@ -1292,11 +1297,11 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         uint256 reserveA,
         uint256 reserveB
     ) public override pure returns(uint256 z){
-        uint256 p=(reserveA.mul(reserveB)/toNum/997).mul(fromNum).mul(1000);
-        uint256 q=(reserveA.mul(reserveA)/3964107892).mul(8973);
+        uint256 p=reserveA.mul(reserveB).div(toNum).div(997).mul(fromNum).mul(1000);
+        uint256 q=reserveA.mul(reserveA).div(3964107892).mul(8973);
         uint256 x=sqrt(p.add(q));
 
-        uint256 y=reserveA.mul(1997)/1994;
+        uint256 y=reserveA.mul(1997).div(1994);
         if(x>y){
             z=x.sub(y).add(1);
         }else{
