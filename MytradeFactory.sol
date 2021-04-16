@@ -48,7 +48,7 @@ interface IMytradePair {
     event Approval(address indexed owner, address indexed spender, uint value);
     event Transfer(address indexed from, address indexed to, uint value);
     function setOrderbook(address _orderbook)external;
-
+    function setRouter(address _router) external;
     function name() external pure returns (string memory);
 
     function symbol() external pure returns (string memory);
@@ -287,8 +287,8 @@ contract MytradePair is IMytradePair, MytradeERC20 {
 
 	// orderbook address
     address public orderbook;
-    modifier onlyOrderbook() {
-        require(msg.sender == orderbook, "MytradePair: caller is not the orderbook");
+    modifier onlyOrderbookOrRouter() {
+        require(msg.sender == orderbook||msg.sender == router, "MytradePair: caller is not the orderbook or router");
         _;
     }
     uint private unlocked = 1;
@@ -298,6 +298,8 @@ contract MytradePair is IMytradePair, MytradeERC20 {
         _;
         unlocked = 1;
     }
+    // router address
+    address public router;
     function getReserves() public view returns (uint112 _reserve0, uint112 _reserve1, uint32 _blockTimestampLast) {
         _reserve0 = reserve0;
         _reserve1 = reserve1;
@@ -306,6 +308,11 @@ contract MytradePair is IMytradePair, MytradeERC20 {
 	function setOrderbook(address _orderbook) external {
 	    if(orderbook==address(0)){
         	orderbook = _orderbook;
+	    }
+    }
+    function setRouter(address _router) external {
+	    if(router==address(0)){
+        	router = _router;
 	    }
     }
     function _safeTransfer(address token, address to, uint value) private {
@@ -437,7 +444,7 @@ contract MytradePair is IMytradePair, MytradeERC20 {
     }
 
     // this low-level function should be called from a contract which performs important safety checks
-    function swap(uint amount0Out, uint amount1Out, address to, bytes calldata data) external onlyOrderbook lock {
+    function swap(uint amount0Out, uint amount1Out, address to, bytes calldata data) external onlyOrderbookOrRouter lock {
         require(amount0Out > 0 || amount1Out > 0, 'MytradeSwap: INSUFFICIENT_OUTPUT_AMOUNT');
         (uint112 _reserve0, uint112 _reserve1,) = getReserves();
         // gas savings
@@ -507,6 +514,7 @@ contract MytradeFactory is IMytradeFactory {
     bool public initCode = false;
     // orderbook address
     address public orderbook;
+    address public router;
     mapping(address => mapping(address => address)) public getPair;
     address[] public allPairs;
 
@@ -519,6 +527,11 @@ contract MytradeFactory is IMytradeFactory {
 	function setOrderbook(address _orderbook) external {
 	    if(orderbook==address(0)){
         	orderbook = _orderbook;
+	    }
+    }
+    function setRouter(address _router) external {
+	    if(router==address(0)){
+        	router = _router;
 	    }
     }
     function allPairsLength() external view returns (uint) {
@@ -542,6 +555,7 @@ contract MytradeFactory is IMytradeFactory {
         // populate mapping in the reverse direction
         allPairs.push(pair);
         IMytradePair(pair).setOrderbook(orderbook);
+        IMytradePair(pair).setRouter(router);
         emit PairCreated(token0, token1, pair, allPairs.length);
     }
   // calculates the CREATE2 address for a pair without making any external calls

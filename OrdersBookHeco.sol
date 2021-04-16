@@ -622,17 +622,20 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                     }
                     if(inAmount>0){
                         {
-                            safeTransfer(
+                            callOptionalReturn(
                                 IERC20(o.fromTokenAddr),
-                                getPair(o.fromTokenAddr, o.toTokenAddr),
-                                inAmount
+                                abi.encodeWithSelector(
+                                    IERC20(o.fromTokenAddr).transfer.selector, 
+                                    getPair(o.fromTokenAddr, o.toTokenAddr), 
+                                    inAmount
+                                )
                             );
                             inAmountSum=inAmountSum.add(inAmount);
                             uint256 numerator = reserveA.mul(1000);
                             uint256 denominator = reserveB.sub(1).mul(997);
                             uint256 amountIn = (numerator / denominator).add(2);
                             if(inAmount>=amountIn){
-                                uint256 amountOut=getAmountOut(amountIn,reserveA,reserveB);
+                                uint256 amountOut=getAmountOut(inAmount,reserveA,reserveB);
                                 (address token0,) =sortTokens(o.fromTokenAddr, o.toTokenAddr);
                                 if(o.fromTokenAddr == token0){
                                     IUniswapV2Pair(getPair(o.fromTokenAddr, o.toTokenAddr)).swap(
@@ -643,6 +646,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                                         amountOut, 0, address(this), new bytes(0)
                                     );
                                 }
+                                outAmountSum=outAmountSum.add(amountOut);
                             }
                         }
                     }
@@ -1172,10 +1176,10 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
 
         // solhint-disable-next-line avoid-low-level-calls
         (bool success, bytes memory returndata) = address(token).call(data);
-        require(success);
+        require(success,"transfer fail");
 
         if (returndata.length > 0) { // Return data is optional
-            require(abi.decode(returndata, (bool)));
+            require(abi.decode(returndata, (bool)),"transfer fail");
         }
     }
     function sortTokens(address tokenA, address tokenB) internal pure returns (address token0, address token1) {
