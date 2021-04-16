@@ -47,7 +47,7 @@ interface IMytradeFactory {
 interface IMytradePair {
     event Approval(address indexed owner, address indexed spender, uint value);
     event Transfer(address indexed from, address indexed to, uint value);
-    function setRouter(address _router) external;
+    function setOrderbook(address _orderbook)external;
 
     function name() external pure returns (string memory);
 
@@ -285,8 +285,12 @@ contract MytradePair is IMytradePair, MytradeERC20 {
     uint public price1CumulativeLast;
     uint public kLast; // reserve0 * reserve1, as of immediately after the most recent liquidity event
 
-	// router address
-    address public router;
+	// orderbook address
+    address public orderbook;
+    modifier onlyOrderbook() {
+        require(msg.sender == orderbook, "MytradePair: caller is not the orderbook");
+        _;
+    }
     uint private unlocked = 1;
     modifier lock() {
         require(unlocked == 1, 'MytradeSwap: LOCKED');
@@ -294,18 +298,14 @@ contract MytradePair is IMytradePair, MytradeERC20 {
         _;
         unlocked = 1;
     }
-	modifier onlyRouter() {
-        require(msg.sender == router, "SwapMining: caller is not the router");
-        _;
-    }
     function getReserves() public view returns (uint112 _reserve0, uint112 _reserve1, uint32 _blockTimestampLast) {
         _reserve0 = reserve0;
         _reserve1 = reserve1;
         _blockTimestampLast = blockTimestampLast;
     }
-	function setRouter(address _router) external {
-	    if(router==address(0)){
-        	router = _router;
+	function setOrderbook(address _orderbook) external {
+	    if(orderbook==address(0)){
+        	orderbook = _orderbook;
 	    }
     }
     function _safeTransfer(address token, address to, uint value) private {
@@ -437,7 +437,7 @@ contract MytradePair is IMytradePair, MytradeERC20 {
     }
 
     // this low-level function should be called from a contract which performs important safety checks
-    function swap(uint amount0Out, uint amount1Out, address to, bytes calldata data) external onlyRouter lock {
+    function swap(uint amount0Out, uint amount1Out, address to, bytes calldata data) external onlyOrderbook lock {
         require(amount0Out > 0 || amount1Out > 0, 'MytradeSwap: INSUFFICIENT_OUTPUT_AMOUNT');
         (uint112 _reserve0, uint112 _reserve1,) = getReserves();
         // gas savings
@@ -505,7 +505,8 @@ contract MytradeFactory is IMytradeFactory {
     uint256 public feeToRate;
     bytes32 public initCodeHash;
     bool public initCode = false;
-    address public router;
+    // orderbook address
+    address public orderbook;
     mapping(address => mapping(address => address)) public getPair;
     address[] public allPairs;
 
@@ -515,9 +516,9 @@ contract MytradeFactory is IMytradeFactory {
         feeToSetter = _feeToSetter;
     }
 
-	function setRouter(address _router) external {
-	    if(router==address(0)){
-        	router = _router;
+	function setOrderbook(address _orderbook) external {
+	    if(orderbook==address(0)){
+        	orderbook = _orderbook;
 	    }
     }
     function allPairsLength() external view returns (uint) {
@@ -540,7 +541,7 @@ contract MytradeFactory is IMytradeFactory {
         getPair[token1][token0] = pair;
         // populate mapping in the reverse direction
         allPairs.push(pair);
-        IMytradePair(pair).setRouter(router);
+        IMytradePair(pair).setOrderbook(orderbook);
         emit PairCreated(token0, token1, pair, allPairs.length);
     }
   // calculates the CREATE2 address for a pair without making any external calls
@@ -809,4 +810,3 @@ library UQ112x112 {
         z = x / uint224(y);
     }
 }
-//0xd24cf22E6C2098eDafB158F02F9e74184a363A96
