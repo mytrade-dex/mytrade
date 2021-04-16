@@ -104,44 +104,13 @@ interface IERC20 {
 
     function allowance(address owner, address spender) external view returns (uint256);
 
-    event Transfer(address indexed from, address indexed to, uint256 value);
-
-    event Approval(address indexed owner, address indexed spender, uint256 value);
-}
-interface IUniswapV2Router02 {
-    function factory() external pure returns (address);
-    function swapExactTokensForTokens(
-        uint256 amountIn,
-        uint256 amountOutMin,
-        address[] calldata path,
-        address to,
-        uint256 deadline
-    ) external returns (uint256[] memory amounts);
 }
 interface IUniswapV2Factory {
     function getPair(address tokenA, address tokenB) external view returns (address pair);
 }
 interface IUniswapV2Pair {
     function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast);
-}
-library UniswapV2Library {
-    function sortTokens(address tokenA, address tokenB) internal pure returns (address token0, address token1) {
-        require(tokenA != tokenB, 'UniswapV2Library: IDENTICAL_ADDRESSES');
-        (token0, token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
-        require(token0 != address(0), 'UniswapV2Library: ZERO_ADDRESS');
-    }
-    function pairFor(address factory, address tokenA, address tokenB) internal view returns (address pair) {
-        return IUniswapV2Factory(factory).getPair(tokenA,tokenB);
-    }
-    function getReserves(
-        address factory,
-        address tokenA,
-        address tokenB
-    ) internal view returns (uint256 reserveA, uint256 reserveB) {
-        (address token0,) = sortTokens(tokenA, tokenB);
-        (uint256 reserve0, uint256 reserve1,) = IUniswapV2Pair(pairFor(factory, tokenA, tokenB)).getReserves();
-        (reserveA, reserveB) = tokenA == token0 ? (reserve0, reserve1) : (reserve1, reserve0);
-    }
+    function swap(uint amount0Out, uint amount1Out, address to, bytes calldata data) external;
 }
 /**
  * @title Ownable
@@ -247,7 +216,7 @@ interface IOrdersBook {
         uint256 _targetOrderIndex,
         uint256 _fromTokenNumber,
         uint256 _toTokenNumber
-    )external payable returns(bool b,uint256 corderIndex) ;
+    )external payable returns(uint256 reserveNum) ;
     function getInAmount(//需要测试是否会返回零
         uint256 fromNum,
         uint256 toNum,
@@ -376,7 +345,6 @@ interface IWHT {
 }
 contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
     using SafeMath for uint256;
-    IUniswapV2Router02 immutable public uniswapV2Router02;
     IUniswapV2Factory immutable public uniswapV2Factory;
     address immutable public whtAddr;
     address public feeAddr;
@@ -402,11 +370,10 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
     }
     TokenPair[] tokenPairArray;// tokenPair数组
     mapping (address  => uint256) tokenPairIndexMap;// token0地址=>tokenPair数组下标
-    constructor(address _whtAddr,address _uniswapV2Router02,address _uniswapV2Factory) payable  {
+    constructor(address _whtAddr,address _uniswapV2Factory) payable  {
         whtAddr=_whtAddr;
         feeAddr=msg.sender;
         tokenPairArray.push();
-        uniswapV2Router02=IUniswapV2Router02(_uniswapV2Router02);
         uniswapV2Factory=IUniswapV2Factory(_uniswapV2Factory);
     }
     receive() external payable { 
@@ -508,87 +475,9 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         uint256 _fromTokenNumber,
         uint256 _toTokenNumber
     )public override payable returns(bool) {
-        (bool b,uint256 orderIndex)=addOrder(_fromTokenAddr,_toTokenAddr,
-            _targetOrderIndex,_fromTokenNumber,_toTokenNumber.div(100000));
-        address pairAddr=getPair(_fromTokenAddr,_toTokenAddr);
-        uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
-        require(b&&tokenPairArray[tokenPairIndex].orderMap[orderIndex].toTokenSum>=_toTokenNumber);
-        tokenPairArray[tokenPairIndex].orderMap[orderIndex].toTokenNumber=_toTokenNumber;
+        require(addOrder(_fromTokenAddr,_toTokenAddr,
+            _targetOrderIndex,_fromTokenNumber,_toTokenNumber.div(100000))==0);
         return true;
-    }
-    function getToNum(Order memory bo) internal pure returns (uint256 _to){
-        _to=bo.toTokenNumber.mul(
-            bo.originalNumbers[bo.originalNumbers.length-1]
-        ).div(bo.fromTokenNumber).mul(1000).div(997);
-    }
-     /**
-     * Returns whether the target address is a contract
-     * @dev This function will return false if invoked during the constructor of a contract,
-     * as the code is not actually created until after the constructor finishes.
-     * @param account address of the account to check
-     * @return whether the target address is a contract
-     */
-    function isContract(address account) internal view returns (bool) {
-        uint256 size;
-        // XXX Currently there is no better way to check if there is a contract in an address
-        // than to check the size of the code at that address.
-        // See https://ethereum.stackexchange.com/a/14016/36603
-        // for more details about how this works.
-        // TODO Check this again before the Serenity release, because all addresses will be
-        // contracts then.
-        // solhint-disable-next-line no-inline-assembly
-        assembly { size := extcodesize(account) }
-        return size > 0;
-    }
-    function safeTransferHT(address to, uint value) internal {
-        (bool success,) = to.call{value : value}(new bytes(0));
-        require(success, 'TransferHelper: HT_TRANSFER_FAILED');
-    }
-     function safeTransfer(IERC20 token, address to, uint256 value) internal {
-        if(address(token)==whtAddr){
-            IWHT(whtAddr).withdraw(value);
-            safeTransferHT(to,value);
-        }else{
-            callOptionalReturn(token, abi.encodeWithSelector(token.transfer.selector, to, value));
-        }
-    }
-
-    function safeTransferFrom(IERC20 token, address from, address to, uint256 value) internal {
-        callOptionalReturn(token, abi.encodeWithSelector(token.transferFrom.selector, from, to, value));
-    }
-
-    function safeApprove(IERC20 token, address spender, uint256 value) internal {
-        // safeApprove should only be called when setting an initial allowance,
-        // or when resetting it to zero. To increase and decrease it, use
-        // 'safeIncreaseAllowance' and 'safeDecreaseAllowance'
-        if(token.allowance(address(this), spender) == 0){
-        	callOptionalReturn(token, abi.encodeWithSelector(token.approve.selector, spender, value));
-        }
-    }
-    /**
-     * @dev Imitates a Solidity high-level call (i.e. a regular function call to a contract), relaxing the requirement
-     * on the return value: the return value is optional (but if data is returned, it must not be false).
-     * @param token The token targeted by the call.
-     * @param data The call data (encoded using abi.encode or one of its variants).
-     */
-    function callOptionalReturn(IERC20 token, bytes memory data) private {
-        // We need to perform a low level call here, to bypass Solidity's return data size checking mechanism, since
-        // we're implementing it ourselves.
-
-        // A Solidity high level call has three parts:
-        //  1. The target address is checked to verify it contains contract code
-        //  2. The call itself is made, and success asserted
-        //  3. The return value is decoded, which in turn checks the size of the returned data.
-
-        require(isContract(address(token)));
-
-        // solhint-disable-next-line avoid-low-level-calls
-        (bool success, bytes memory returndata) = address(token).call(data);
-        require(success);
-
-        if (returndata.length > 0) { // Return data is optional
-            require(abi.decode(returndata, (bool)));
-        }
     }
    
     function addOrder(
@@ -597,16 +486,10 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         uint256 _targetOrderIndex,
         uint256 _fromTokenNumber,
         uint256 _toTokenNumber
-    )public override payable nonReentrant returns(bool b,uint256 corderIndex) {
-        address pairAddr=getPair(_fromTokenAddr,_toTokenAddr);
-        require(IERC20(_fromTokenAddr).balanceOf(msg.sender)>=_fromTokenNumber);
-        require(IERC20(_fromTokenAddr).allowance(msg.sender,address(this))>=_fromTokenNumber);
-        if(_fromTokenAddr==whtAddr){
-            require(msg.value>=_fromTokenNumber);
+    )public override payable nonReentrant returns(uint256 reserveNum) {
+        if(_fromTokenAddr==whtAddr&&msg.value>=_fromTokenNumber){
             IWHT(whtAddr).deposit{value : msg.value}();
         }else{
-            require(IERC20(_fromTokenAddr).balanceOf(msg.sender)>=_fromTokenNumber);
-            require(IERC20(_fromTokenAddr).allowance(msg.sender,address(this))>=_fromTokenNumber);
             safeTransferFrom(
                 IERC20(_fromTokenAddr),
                 msg.sender,
@@ -614,11 +497,11 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                 _fromTokenNumber
             );
         }
-        uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
+        uint256 tokenPairIndex=tokenPairIndexMap[getPair(_fromTokenAddr,_toTokenAddr)];
         if(tokenPairIndex== 0){//如果交易对不存在就新增一个
             tokenPairArray.push();
             tokenPairIndex=tokenPairArray.length-1 ;
-            tokenPairIndexMap[pairAddr]=tokenPairIndex;
+            tokenPairIndexMap[getPair(_fromTokenAddr,_toTokenAddr)]=tokenPairIndex;
         }
         TokenPair storage _tokenPair=tokenPairArray[tokenPairIndex];
         uint256 orderIndex=_tokenPair.orderMaxIndex.add(1);
@@ -641,22 +524,34 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
             );
         }
 
-        Order memory o=Order(msg.sender,_fromTokenAddr,_toTokenAddr,
+        Order memory order=Order(msg.sender,_fromTokenAddr,_toTokenAddr,
             new uint256[](1),new uint256[](1),_fromTokenNumber,_toTokenNumber,0);
-        o.originalNumbers[0]=_fromTokenNumber;
-        o.timestamps[0]=block.timestamp;
-
-        _tokenPair.orderMap[orderIndex]=o;
+        order.originalNumbers[0]=_fromTokenNumber;
+        order.timestamps[0]=block.timestamp;
+        _tokenPair.orderMap[orderIndex]=order;
         _tokenPair.ordersForAddress[msg.sender].push(orderIndex);
         if(_tokenPair.orderPreSequence[orderIndex]==0){
-            _tokenPair.lastIndex[o.fromTokenAddr]=orderIndex;
-            (uint256 reserveA,uint256 reserveB)=UniswapV2Library.getReserves(
-                address(uniswapV2Factory),o.fromTokenAddr, o.toTokenAddr);
+            _tokenPair.lastIndex[_fromTokenAddr]=orderIndex;
+            checkTrade(_tokenPair,orderIndex);
+        }
+        reserveNum=_tokenPair.orderMap[orderIndex].originalNumbers[
+        _tokenPair.orderMap[orderIndex].originalNumbers.length-1];
+        if(reserveNum==0){
+            _tokenPair.lastIndex[_fromTokenAddr]=_tokenPair.orderNextSequence[orderIndex];
+            if(_tokenPair.lastIndex[_fromTokenAddr]!=0){
+                _tokenPair.orderPreSequence[_tokenPair.lastIndex[_fromTokenAddr]]=0;
+            }
+            _tokenPair.orderNextSequence[orderIndex]=0;
+        }
+    }
+    function checkTrade(TokenPair storage _tokenPair,uint256 orderIndex) internal {
+            Order memory o=_tokenPair.orderMap[orderIndex];
+            (uint256 reserveA,uint256 reserveB)=getReserves(o.fromTokenAddr, o.toTokenAddr);
             uint256 fee=0;   
             uint256 cInAmount=getInAmount(o.fromTokenNumber,o.toTokenNumber,reserveA,reserveB);//计算达到当前订单价格需要付出的币数量
             if(cInAmount>1){//如果流动池价格低于当前价格
                 {
-                    if(cInAmount>o.fromTokenNumber){
+                    if(cInAmount>o.fromTokenNumber){//如果精度差距，取小的数值
                         cInAmount=o.fromTokenNumber;
                     }
                     uint256 inAmountSum=0;
@@ -700,18 +595,19 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                                             }
                                         }
                                     }else{//如果最后一条订单簿能成交够,部分成交订单簿
+                                        uint256 atoNum=tokenANum.mul(997).div(1000);
                                         safeTransfer(
                                             IERC20(bo.toTokenAddr),
                                             bo.maker,
-                                            tokenANum.mul(997).div(1000)
+                                            atoNum
                                         );
                                         fee=fee.add(tokenANum.mul(3).div(1000));
                                         inAmountSum=inAmountSum.add(tokenANum);
-                                        uint256 tokenBNum=tokenANum.mul(997).div(1000).mul(bo.fromTokenNumber) / bo.toTokenNumber;
+                                        uint256 tokenBNum=atoNum.mul(bo.fromTokenNumber) / bo.toTokenNumber;
                                         outAmountSum=outAmountSum.add(tokenBNum);
                                         _tokenPair.orderMap[tokenBIndex].originalNumbers.push(
                                             bo.originalNumbers[bo.originalNumbers.length-1].sub(tokenBNum));
-                                        _tokenPair.orderMap[tokenBIndex].toTokenSum=tokenANum.mul(997).div(1000).add(bo.toTokenSum);
+                                        _tokenPair.orderMap[tokenBIndex].toTokenSum=atoNum.add(bo.toTokenSum);
                                         _tokenPair.orderMap[tokenBIndex].timestamps.push(block.timestamp);
                                         tokenANum=0;//停止向上遍列
                                     }
@@ -726,23 +622,43 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                     }
                     if(inAmount>0){
                         {
+                            safeTransfer(
+                                IERC20(o.fromTokenAddr),
+                                getPair(o.fromTokenAddr, o.toTokenAddr),
+                                inAmount
+                            );
+                            inAmountSum=inAmountSum.add(inAmount);
                             uint256 numerator = reserveA.mul(1000);
                             uint256 denominator = reserveB.sub(1).mul(997);
                             uint256 amountIn = (numerator / denominator).add(2);
                             if(inAmount>=amountIn){
-                                inAmountSum=inAmountSum.add(inAmount);
-                                outAmountSum=outAmountSum.add(_checkUniswapToTrade(inAmount,o.fromTokenAddr,o.toTokenAddr));
-                            }else{
-                               inAmountSum=o.fromTokenNumber;
+                                uint256 amountOut=getAmountOut(amountIn,reserveA,reserveB);
+                                (address token0,) =sortTokens(o.fromTokenAddr, o.toTokenAddr);
+                                if(o.fromTokenAddr == token0){
+                                    IUniswapV2Pair(getPair(o.fromTokenAddr, o.toTokenAddr)).swap(
+                                        0, amountOut, address(this), new bytes(0)
+                                    );
+                                }else{
+                                    IUniswapV2Pair(getPair(o.fromTokenAddr, o.toTokenAddr)).swap(
+                                        amountOut, 0, address(this), new bytes(0)
+                                    );
+                                }
                             }
                         }
                     }
                     if(inAmountSum>0){
-                        safeTransfer(
-                            IERC20(o.toTokenAddr),
-                            o.maker,
-                            outAmountSum
-                        );
+                        if(outAmountSum>0){
+                            safeTransfer(
+                                IERC20(o.toTokenAddr),
+                                o.maker,
+                                outAmountSum
+                            );
+                            _tokenPair.orderMap[orderIndex].toTokenSum=outAmountSum.add(
+                            _tokenPair.orderMap[orderIndex].toTokenSum);
+                        }
+                        _tokenPair.orderMap[orderIndex].originalNumbers.push(
+                            o.fromTokenNumber.sub(inAmountSum));
+                        _tokenPair.orderMap[orderIndex].timestamps.push(block.timestamp);
                         if(fee>0){
 		                    safeTransfer(
 		                        IERC20(o.fromTokenAddr),
@@ -750,11 +666,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
 		                        fee
 		                    );
 		                }
-                        _tokenPair.orderMap[orderIndex].toTokenSum=outAmountSum.add(
-                            _tokenPair.orderMap[orderIndex].toTokenSum);
-                        _tokenPair.orderMap[orderIndex].originalNumbers.push(
-                            o.fromTokenNumber.sub(inAmountSum));
-                        _tokenPair.orderMap[orderIndex].timestamps.push(block.timestamp);
+                        
                     }
                 }
 
@@ -767,14 +679,16 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                     Order memory bo=_tokenPair.orderMap[tokenBIndex];
                     if(o.fromTokenNumber.mul(bo.fromTokenNumber)==o.toTokenNumber.mul(bo.toTokenNumber)){
                         tokenANum=o.fromTokenNumber.sub(inAmountSum);
-                        if(tokenANum>=getToNum(bo)){
+                        uint256 toNum=getToNum(bo);
+                        if(tokenANum>=toNum){
+                            uint256 atoNum=toNum.mul(997).div(1000);
                             safeTransfer(
                                 IERC20(bo.toTokenAddr),
                                 bo.maker,
-                                getToNum(bo).mul(997).div(1000)
+                                atoNum
                             );
-                            fee=fee.add(getToNum(bo).mul(3).div(1000));
-                            inAmountSum=inAmountSum.add(getToNum(bo));
+                            fee=fee.add(toNum.mul(3).div(1000));
+                            inAmountSum=inAmountSum.add(toNum);
                             outAmountSum=outAmountSum.add(bo.originalNumbers[bo.originalNumbers.length-1]);
                             uint newBIndex=_tokenPair.orderNextSequence[tokenBIndex];
                             _tokenPair.lastIndex[o.toTokenAddr]=newBIndex;
@@ -782,23 +696,24 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                             if(newBIndex!=0){
                                 _tokenPair.orderPreSequence[newBIndex]=0;
                             }
-                            _tokenPair.orderMap[tokenBIndex].toTokenSum=getToNum(bo).mul(997).div(1000).add(_tokenPair.orderMap[tokenBIndex].toTokenSum);
+                            _tokenPair.orderMap[tokenBIndex].toTokenSum=atoNum.add(_tokenPair.orderMap[tokenBIndex].toTokenSum);
                             _tokenPair.orderMap[tokenBIndex].originalNumbers.push(0);
                             _tokenPair.orderMap[tokenBIndex].timestamps.push(block.timestamp);
                             tokenBIndex=newBIndex;
                         }else{
+                            uint256 atoNum=tokenANum.mul(997).div(1000);
                             safeTransfer(
                                 IERC20(bo.toTokenAddr),
                                 bo.maker,
-                                tokenANum.mul(997).div(1000)
+                                atoNum
                             );
                             fee=fee.add(tokenANum.mul(3).div(1000));
                             inAmountSum=o.fromTokenNumber;
-                            uint256 tokenBNum=tokenANum.mul(bo.fromTokenNumber) / bo.toTokenNumber;
+                            uint256 tokenBNum=atoNum.mul(bo.fromTokenNumber) / bo.toTokenNumber;
                             outAmountSum=outAmountSum.add(tokenBNum);
                             _tokenPair.orderMap[tokenBIndex].originalNumbers.push(
                                 bo.originalNumbers[bo.originalNumbers.length-1].sub(tokenBNum));
-                            _tokenPair.orderMap[tokenBIndex].toTokenSum=tokenANum.mul(997).div(1000).add(bo.toTokenSum);
+                            _tokenPair.orderMap[tokenBIndex].toTokenSum=atoNum.add(bo.toTokenSum);
                             _tokenPair.orderMap[tokenBIndex].timestamps.push(block.timestamp);
                             break;
                         }
@@ -826,43 +741,8 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                     _tokenPair.orderMap[orderIndex].timestamps.push(block.timestamp);
                 }
             }
-        }
-        uint256 reserveNum=_tokenPair.orderMap[orderIndex].originalNumbers[
-        _tokenPair.orderMap[orderIndex].originalNumbers.length-1];
-       
-        if(reserveNum==0){
-            _tokenPair.lastIndex[o.fromTokenAddr]=_tokenPair.orderNextSequence[orderIndex];
-            if(_tokenPair.lastIndex[o.fromTokenAddr]!=0){
-                _tokenPair.orderPreSequence[_tokenPair.lastIndex[o.fromTokenAddr]]=0;
-            }
-            _tokenPair.orderNextSequence[orderIndex]=0;
-        }
-        corderIndex=orderIndex;
-        b=true;
+        
     }
-    function _checkUniswapToTrade(
-        uint256 amountInput,
-        address _fromTokenAddr,
-        address _toTokenAddr
-    ) internal returns(uint result){
-        safeApprove(
-            IERC20(_fromTokenAddr),
-            address(uniswapV2Router02),
-            UINT256_MAX
-        );
-        address[] memory _addressPair = new address[](2);
-        _addressPair[0] = _fromTokenAddr;
-        _addressPair[1] = _toTokenAddr;
-        uint256[] memory _swapResult=uniswapV2Router02.swapExactTokensForTokens(
-            amountInput,
-            0,
-            _addressPair,
-            address(this),
-            UINT256_MAX
-        );
-        result=_swapResult[1];
-    }
-
     function joinNumber(
         uint256 _number,
         uint256[] memory narray
@@ -886,7 +766,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         uint256 _start,//开始位置
         uint256 _num//数量
     )public override view returns(uint256[] memory indexs){
-        address pairAddr = uniswapV2Factory.getPair(_fromTokenAddr, _toTokenAddr);
+        address pairAddr =getPair(_fromTokenAddr, _toTokenAddr);
         if(pairAddr!=address(0)){
             uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
             if(tokenPairIndex!=0){
@@ -951,7 +831,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         uint256[] memory toTokenNumbers,//初始意向代币目标金额
         uint256[] memory toTokenSums//已经获取的金额
     ){
-        address pairAddr = uniswapV2Factory.getPair(_fromTokenAddr, _toTokenAddr);
+        address pairAddr = getPair(_fromTokenAddr, _toTokenAddr);
         if(pairAddr!=address(0)){
             if(tokenPairIndexMap[pairAddr]!=0){
                 TokenPair storage tokenPair=tokenPairArray[tokenPairIndexMap[pairAddr]];
@@ -989,7 +869,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         uint256[] memory toTokenNumbers,//初始意向代币目标金额
         uint256[] memory toTokenSums//已经获取的金额
     ){
-        address pairAddr = uniswapV2Factory.getPair(_fromTokenAddr, _toTokenAddr);
+        address pairAddr = getPair(_fromTokenAddr, _toTokenAddr);
         if(pairAddr!=address(0)){
             uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
             if(tokenPairIndex!=0){
@@ -1028,7 +908,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         uint256 toTokenNumber,//初始意向代币目标金额
         uint256 toTokenSum
     ){
-        address pairAddr = uniswapV2Factory.getPair(_fromTokenAddr, _toTokenAddr);
+        address pairAddr =getPair(_fromTokenAddr, _toTokenAddr);
         if(pairAddr!=address(0)){
             uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
             if(tokenPairIndex!=0){
@@ -1067,7 +947,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         uint256 _orderStartIndex,// 订单序号点
         uint256 _records// 每次获取的个数
     )public override view returns(uint256[] memory orderIndexs){
-        address pairAddr = uniswapV2Factory.getPair(_fromTokenAddr, _toTokenAddr);
+        address pairAddr = getPair(_fromTokenAddr, _toTokenAddr);
         if(pairAddr!=address(0)){
             uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
             if(tokenPairIndex!=0){
@@ -1106,7 +986,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         address _toTokenAddr,// 买入token地址
         uint256 _orderIndex//必须是正确的数值
     )public override view returns(uint256 times){
-        address pairAddr = uniswapV2Factory.getPair(_fromTokenAddr, _toTokenAddr);
+        address pairAddr =getPair(_fromTokenAddr, _toTokenAddr);
         if(pairAddr!=address(0)){
             uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
             if(tokenPairIndex!=0){
@@ -1118,7 +998,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         address _fromTokenAddr,// 卖出token地址
         address _toTokenAddr// 买入token地址
     )public override view returns(uint256 orderMaxIndex){
-        address pairAddr = uniswapV2Factory.getPair(_fromTokenAddr, _toTokenAddr);
+        address pairAddr = getPair(_fromTokenAddr, _toTokenAddr);
         if(pairAddr!=address(0)){
             uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
             if(tokenPairIndex!=0){
@@ -1132,7 +1012,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         address _toTokenAddr,// 买入token地址
         address _maker//必须是正确的数值
     )public override view returns(uint256 len){
-        address pairAddr = uniswapV2Factory.getPair(_fromTokenAddr, _toTokenAddr);
+        address pairAddr =getPair(_fromTokenAddr, _toTokenAddr);
         if(pairAddr!=address(0)){
             uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
             if(tokenPairIndex!=0){
@@ -1151,7 +1031,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         uint256 _fromTokenNumber,
         uint256 _toTokenNumber
     )public override view returns (uint256 closestOrderIndex){
-        address pairAddr = uniswapV2Factory.getPair(_fromTokenAddr, _toTokenAddr);
+        address pairAddr = getPair(_fromTokenAddr, _toTokenAddr);
         if(pairAddr!=address(0)){
             uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
             if(tokenPairIndex!=0){
@@ -1196,7 +1076,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         address _fromTokenAddr,
         address _toTokenAddr
     )public override view returns (uint256 lastOrderIndex){
-        address pairAddr = uniswapV2Factory.getPair(_fromTokenAddr, _toTokenAddr);
+        address pairAddr = getPair(_fromTokenAddr, _toTokenAddr);
         if(pairAddr!=address(0)){
             uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
             if(tokenPairIndex!=0){
@@ -1209,7 +1089,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         address _toTokenAddr,
         uint256 _orderIndex
     )public override view returns  (uint256 nextOrderIndex){
-        address pairAddr = uniswapV2Factory.getPair(_fromTokenAddr, _toTokenAddr);
+        address pairAddr = getPair(_fromTokenAddr, _toTokenAddr);
         if(pairAddr!=address(0)){
             uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
             if(tokenPairIndex!=0){
@@ -1224,27 +1104,102 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         address _toTokenAddr,
         uint256 _orderIndex
     )public override view returns (uint256 preOrderIndex){
-        address pairAddr = uniswapV2Factory.getPair(_fromTokenAddr, _toTokenAddr);
-        if(pairAddr!=address(0)){
-            uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
-            if(tokenPairIndex!=0){
-                if(tokenPairArray[tokenPairIndex].orderMap[_orderIndex].fromTokenAddr==_fromTokenAddr){
-                    preOrderIndex=tokenPairArray[tokenPairIndex].orderPreSequence[_orderIndex];
-                }
+        address pairAddr = getPair(_fromTokenAddr, _toTokenAddr);
+        uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
+        if(tokenPairIndex!=0){
+            if(tokenPairArray[tokenPairIndex].orderMap[_orderIndex].fromTokenAddr==_fromTokenAddr){
+                preOrderIndex=tokenPairArray[tokenPairIndex].orderPreSequence[_orderIndex];
             }
         }
     }
-    function getPair(address tokenA, address tokenB)  public override view returns (address){
-        address _pairAddress = uniswapV2Factory.getPair(tokenA, tokenB);
-        require(_pairAddress != address(0), "Unavailable pair address");
-        return _pairAddress;
+     function getToNum(Order memory bo) internal pure returns (uint256 _to){
+        _to=bo.toTokenNumber.mul(
+            bo.originalNumbers[bo.originalNumbers.length-1]
+        ).div(bo.fromTokenNumber).mul(1000).div(997);
+    }
+     /**
+     * Returns whether the target address is a contract
+     * @dev This function will return false if invoked during the constructor of a contract,
+     * as the code is not actually created until after the constructor finishes.
+     * @param account address of the account to check
+     * @return whether the target address is a contract
+     */
+    function isContract(address account) internal view returns (bool) {
+        uint256 size;
+        // XXX Currently there is no better way to check if there is a contract in an address
+        // than to check the size of the code at that address.
+        // See https://ethereum.stackexchange.com/a/14016/36603
+        // for more details about how this works.
+        // TODO Check this again before the Serenity release, because all addresses will be
+        // contracts then.
+        // solhint-disable-next-line no-inline-assembly
+        assembly { size := extcodesize(account) }
+        return size > 0;
+    }
+    function safeTransferHT(address to, uint value) internal {
+        (bool success,) = to.call{value : value}(new bytes(0));
+        require(success, 'TransferHelper: HT_TRANSFER_FAILED');
+    }
+     function safeTransfer(IERC20 token, address to, uint256 value) internal {
+        if(address(token)==whtAddr){
+            IWHT(whtAddr).withdraw(value);
+            safeTransferHT(to,value);
+        }else{
+            callOptionalReturn(token, abi.encodeWithSelector(token.transfer.selector, to, value));
+        }
+    }
+
+    function safeTransferFrom(IERC20 token, address from, address to, uint256 value) internal {
+        callOptionalReturn(token, abi.encodeWithSelector(token.transferFrom.selector, from, to, value));
+    }
+
+    /**
+     * @dev Imitates a Solidity high-level call (i.e. a regular function call to a contract), relaxing the requirement
+     * on the return value: the return value is optional (but if data is returned, it must not be false).
+     * @param token The token targeted by the call.
+     * @param data The call data (encoded using abi.encode or one of its variants).
+     */
+    function callOptionalReturn(IERC20 token, bytes memory data) private {
+        // We need to perform a low level call here, to bypass Solidity's return data size checking mechanism, since
+        // we're implementing it ourselves.
+
+        // A Solidity high level call has three parts:
+        //  1. The target address is checked to verify it contains contract code
+        //  2. The call itself is made, and success asserted
+        //  3. The return value is decoded, which in turn checks the size of the returned data.
+
+        require(isContract(address(token)));
+
+        // solhint-disable-next-line avoid-low-level-calls
+        (bool success, bytes memory returndata) = address(token).call(data);
+        require(success);
+
+        if (returndata.length > 0) { // Return data is optional
+            require(abi.decode(returndata, (bool)));
+        }
+    }
+    function sortTokens(address tokenA, address tokenB) internal pure returns (address token0, address token1) {
+        (token0, token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
+    }
+    // fetches and sorts the reserves for a pair
+    function getReserves(address tokenA, address tokenB) internal view returns (uint reserveA, uint reserveB) {
+        (address token0,) = sortTokens(tokenA, tokenB);
+        (uint reserve0, uint reserve1,) = IUniswapV2Pair(getPair(tokenA, tokenB)).getReserves();
+        (reserveA, reserveB) = tokenA == token0 ? (reserve0, reserve1) : (reserve1, reserve0);
+    }
+    // given an input amount of an asset and pair reserves, returns the maximum output amount of the other asset
+    function getAmountOut(uint amountIn, uint reserveIn, uint reserveOut) internal pure returns (uint amountOut) {
+        uint amountInWithFee = amountIn.mul(997);
+        uint numerator = amountInWithFee.mul(reserveOut);
+        uint denominator = reserveIn.mul(1000).add(amountInWithFee);
+        amountOut = numerator / denominator;
     }
     function IsCancelOrderIndex(
         address _fromTokenAddr,
         address _toTokenAddr,
         uint256 _orderIndex
     )public override view returns (bool){
-        address pairAddr = uniswapV2Factory.getPair(_fromTokenAddr, _toTokenAddr);
+        address pairAddr = getPair(_fromTokenAddr, _toTokenAddr);
         if(pairAddr!=address(0)){
             uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
             if(tokenPairIndex!=0){
@@ -1307,5 +1262,8 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         }else{
             z=0;
         }
+    }
+    function getPair(address tokenA, address tokenB)  public override view returns (address){
+        return uniswapV2Factory.getPair(tokenA, tokenB);
     }
 }
