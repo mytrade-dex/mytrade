@@ -266,7 +266,7 @@ interface IOrdersBook {
     )external view returns(
         address maker,//挂单者
         address fromTokenAddr,// 代币地址
-        uint256 originalNumber,//初始挂单量
+        uint256 remainNumber,//初始挂单量
         uint256 timestamp,//初始挂单时间
         uint256 currentNumber,//当前挂单存量
         uint256 toTokenNumber,//初始意向代币目标金额
@@ -292,11 +292,6 @@ interface IOrdersBook {
         uint256 _orderStartIndex,// 订单序号点
         uint256 _records// 每次获取的个数
     )external view returns(uint256[] memory orderIndexs);
-    function getOrderTimes(// 获取订单变更次数
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr,// 买入token地址
-        uint256 _orderIndex//必须是正确的数值
-    )external view returns(uint256 times);
     function getOrderSums(//获取交易对所有订单总下单数(包括所有历史和已取消的订单)
         address _fromTokenAddr,// 卖出token地址
         address _toTokenAddr// 买入token地址
@@ -313,8 +308,9 @@ interface IOrdersBook {
         address _toTokenAddr,
         uint256 _targetOrderIndex,
         uint256 _fromTokenNumber,
-        uint256 _toTokenNumber
-    )external view returns (uint256 closestOrderIndex);
+        uint256 _toTokenNumber,
+         uint256 _depth
+    )external view returns (uint256 closestOrderIndex, uint8 end);
     function getLastOrderIndex(
         address _fromTokenAddr,
         address _toTokenAddr
@@ -354,8 +350,8 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         address payable maker;
         address fromTokenAddr;
         address toTokenAddr;
-        uint256[] originalNumbers;
-        uint256[] timestamps;
+        uint256 remainNumber;
+        uint256 timestamp;
         uint256 fromTokenNumber;// 代币挂单金额
         uint256 toTokenNumber;// 意向代币目标金额
         uint256 toTokenSum;// 已经获取的金额
@@ -368,8 +364,9 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         mapping(uint256=> uint256) orderPreSequence;// 价格高的orderIndex=》价格低的orderIndex
         mapping(address => uint256[]) ordersForAddress;// 地址=》该地址对应的orderIndex
     }
-    TokenPair[] tokenPairArray;// tokenPair数组
-    mapping (address  => uint256) tokenPairIndexMap;// token0地址=>tokenPair数组下标
+    TokenPair[] public tokenPairArray;// tokenPair数组
+    mapping (address  => uint256) public tokenPairIndexMap;// token0地址=>tokenPair数组下标
+    mapping (uint256  => mapping (uint256  => uint8)) public cancelMap;//是否是已取消订单
     constructor(address _whtAddr,address _uniswapV2Factory) payable  {
         whtAddr=_whtAddr;
         feeAddr=msg.sender;
@@ -394,6 +391,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         TokenPair storage _tokenPair=tokenPairArray[tokenPairIndex];
         require(_tokenPair.orderMap[_orderIndex].maker==msg.sender);
         require(_orderIndex!=0);
+        cancelMap[tokenPairIndex][_orderIndex]=1;//已取消
         if(_tokenPair.lastIndex[_fromTokenAddr]==_orderIndex){
             _tokenPair.lastIndex[_fromTokenAddr]=_tokenPair.orderNextSequence[_orderIndex];
             _tokenPair.orderPreSequence[_tokenPair.lastIndex[_fromTokenAddr]]=0;
@@ -411,8 +409,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
             _tokenPair.orderNextSequence[_orderIndex]=0;
         }
 
-        uint256 fromTokenNumber=_tokenPair.orderMap[_orderIndex].originalNumbers[
-        _tokenPair.orderMap[_orderIndex].originalNumbers.length-1];
+        uint256 fromTokenNumber=_tokenPair.orderMap[_orderIndex].remainNumber;
         if(fromTokenNumber>0){
             safeTransfer(
                 IERC20(_fromTokenAddr),
@@ -420,7 +417,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                 fromTokenNumber
             );
         }
-        _tokenPair.orderMap[_orderIndex].timestamps.push(block.timestamp);
+        _tokenPair.orderMap[_orderIndex].timestamp=block.timestamp;
         return true;
     }
 
@@ -431,14 +428,14 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         uint256 _fromTokenNumber,
         uint256 _toTokenNumber
     )internal{
-        if(_fromTokenNumber.mul(_tokenPair.orderMap[_targetOrderIndex].toTokenNumber)<
+        if(_fromTokenNumber.mul(_tokenPair.orderMap[_targetOrderIndex].toTokenNumber)<=
             _tokenPair.orderMap[_targetOrderIndex].fromTokenNumber.mul(_toTokenNumber)){
             uint256 orderNextSequence=_tokenPair.orderNextSequence[_targetOrderIndex];
             if(orderNextSequence==0){
                 _tokenPair.orderNextSequence[_targetOrderIndex]=_orderIndex;
                 _tokenPair.orderPreSequence[_orderIndex]=_targetOrderIndex;
             }else{
-                if(_fromTokenNumber.mul(_tokenPair.orderMap[orderNextSequence].toTokenNumber)<
+                if(_fromTokenNumber.mul(_tokenPair.orderMap[orderNextSequence].toTokenNumber)<=
                     _tokenPair.orderMap[orderNextSequence].fromTokenNumber.mul(_toTokenNumber)){
                     _orderIndexSequence(orderNextSequence,
                         _orderIndex,_tokenPair,_fromTokenNumber,_toTokenNumber);
@@ -455,7 +452,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                 _tokenPair.orderPreSequence[_targetOrderIndex]=_orderIndex;
                 _tokenPair.orderNextSequence[_orderIndex]=_targetOrderIndex;
             }else{
-                if(_fromTokenNumber.mul(_tokenPair.orderMap[orderPreIndex].toTokenNumber)>
+                if(_fromTokenNumber.mul(_tokenPair.orderMap[orderPreIndex].toTokenNumber)>=
                     _tokenPair.orderMap[orderPreIndex].fromTokenNumber.mul(_toTokenNumber)){
                     _orderIndexSequence(orderPreIndex,
                         _orderIndex,_tokenPair,_fromTokenNumber,_toTokenNumber);
@@ -525,17 +522,14 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         }
 
         Order memory order=Order(msg.sender,_fromTokenAddr,_toTokenAddr,
-            new uint256[](1),new uint256[](1),_fromTokenNumber,_toTokenNumber,0);
-        order.originalNumbers[0]=_fromTokenNumber;
-        order.timestamps[0]=block.timestamp;
+           _fromTokenNumber,block.timestamp,_fromTokenNumber,_toTokenNumber,0);
         _tokenPair.orderMap[orderIndex]=order;
         _tokenPair.ordersForAddress[msg.sender].push(orderIndex);
         if(_tokenPair.orderPreSequence[orderIndex]==0){
             _tokenPair.lastIndex[_fromTokenAddr]=orderIndex;
             checkTrade(_tokenPair,orderIndex);
         }
-        reserveNum=_tokenPair.orderMap[orderIndex].originalNumbers[
-        _tokenPair.orderMap[orderIndex].originalNumbers.length-1];
+        reserveNum=_tokenPair.orderMap[orderIndex].remainNumber;
         if(reserveNum==0){
             _tokenPair.lastIndex[_fromTokenAddr]=_tokenPair.orderNextSequence[orderIndex];
             if(_tokenPair.lastIndex[_fromTokenAddr]!=0){
@@ -573,7 +567,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                                         );
                                         fee=fee.add(getToNum(bo).mul(3).div(1000));
                                         inAmountSum=inAmountSum.add(getToNum(bo));
-                                        outAmountSum=outAmountSum.add(bo.originalNumbers[bo.originalNumbers.length-1]);
+                                        outAmountSum=outAmountSum.add(bo.remainNumber);
                                         uint newBIndex=_tokenPair.orderNextSequence[tokenBIndex];
                                         _tokenPair.lastIndex[o.toTokenAddr]=newBIndex;
                                         _tokenPair.orderNextSequence[tokenBIndex]=0;
@@ -582,8 +576,8 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                                         }
                                         _tokenPair.orderMap[tokenBIndex].toTokenSum=
                                         getToNum(bo).mul(997).div(1000).add(_tokenPair.orderMap[tokenBIndex].toTokenSum);
-                                        _tokenPair.orderMap[tokenBIndex].originalNumbers.push(0);
-                                        _tokenPair.orderMap[tokenBIndex].timestamps.push(block.timestamp);
+                                        _tokenPair.orderMap[tokenBIndex].remainNumber=0;
+                                        _tokenPair.orderMap[tokenBIndex].timestamp=block.timestamp;
                                         tokenBIndex=newBIndex;
                                         if(tokenBIndex!=0){
                                             bo=_tokenPair.orderMap[tokenBIndex];
@@ -605,10 +599,10 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                                         inAmountSum=inAmountSum.add(tokenANum);
                                         uint256 tokenBNum=atoNum.mul(bo.fromTokenNumber) / bo.toTokenNumber;
                                         outAmountSum=outAmountSum.add(tokenBNum);
-                                        _tokenPair.orderMap[tokenBIndex].originalNumbers.push(
-                                            bo.originalNumbers[bo.originalNumbers.length-1].sub(tokenBNum));
+                                        _tokenPair.orderMap[tokenBIndex].remainNumber=
+                                            bo.remainNumber.sub(tokenBNum);
                                         _tokenPair.orderMap[tokenBIndex].toTokenSum=atoNum.add(bo.toTokenSum);
-                                        _tokenPair.orderMap[tokenBIndex].timestamps.push(block.timestamp);
+                                        _tokenPair.orderMap[tokenBIndex].timestamp=block.timestamp;
                                         tokenANum=0;//停止向上遍列
                                     }
                                 }
@@ -660,9 +654,9 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                             _tokenPair.orderMap[orderIndex].toTokenSum=outAmountSum.add(
                             _tokenPair.orderMap[orderIndex].toTokenSum);
                         }
-                        _tokenPair.orderMap[orderIndex].originalNumbers.push(
-                            o.fromTokenNumber.sub(inAmountSum));
-                        _tokenPair.orderMap[orderIndex].timestamps.push(block.timestamp);
+                        _tokenPair.orderMap[orderIndex].remainNumber=
+                            o.fromTokenNumber.sub(inAmountSum);
+                        _tokenPair.orderMap[orderIndex].timestamp=block.timestamp;
                         if(fee>0){
 		                    safeTransfer(
 		                        IERC20(o.fromTokenAddr),
@@ -693,7 +687,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                             );
                             fee=fee.add(toNum.mul(3).div(1000));
                             inAmountSum=inAmountSum.add(toNum);
-                            outAmountSum=outAmountSum.add(bo.originalNumbers[bo.originalNumbers.length-1]);
+                            outAmountSum=outAmountSum.add(bo.remainNumber);
                             uint newBIndex=_tokenPair.orderNextSequence[tokenBIndex];
                             _tokenPair.lastIndex[o.toTokenAddr]=newBIndex;
                             _tokenPair.orderNextSequence[tokenBIndex]=0;
@@ -701,8 +695,8 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                                 _tokenPair.orderPreSequence[newBIndex]=0;
                             }
                             _tokenPair.orderMap[tokenBIndex].toTokenSum=atoNum.add(_tokenPair.orderMap[tokenBIndex].toTokenSum);
-                            _tokenPair.orderMap[tokenBIndex].originalNumbers.push(0);
-                            _tokenPair.orderMap[tokenBIndex].timestamps.push(block.timestamp);
+                            _tokenPair.orderMap[tokenBIndex].remainNumber=0;
+                            _tokenPair.orderMap[tokenBIndex].timestamp=block.timestamp;
                             tokenBIndex=newBIndex;
                         }else{
                             uint256 atoNum=tokenANum.mul(997).div(1000);
@@ -715,10 +709,10 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                             inAmountSum=o.fromTokenNumber;
                             uint256 tokenBNum=atoNum.mul(bo.fromTokenNumber) / bo.toTokenNumber;
                             outAmountSum=outAmountSum.add(tokenBNum);
-                            _tokenPair.orderMap[tokenBIndex].originalNumbers.push(
-                                bo.originalNumbers[bo.originalNumbers.length-1].sub(tokenBNum));
+                            _tokenPair.orderMap[tokenBIndex].remainNumber=
+                                bo.remainNumber.sub(tokenBNum);
                             _tokenPair.orderMap[tokenBIndex].toTokenSum=atoNum.add(bo.toTokenSum);
-                            _tokenPair.orderMap[tokenBIndex].timestamps.push(block.timestamp);
+                            _tokenPair.orderMap[tokenBIndex].timestamp=block.timestamp;
                             break;
                         }
                     }else{
@@ -740,9 +734,9 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                     }
                     _tokenPair.orderMap[orderIndex].toTokenSum=outAmountSum.add(
                         _tokenPair.orderMap[orderIndex].toTokenSum);
-                    _tokenPair.orderMap[orderIndex].originalNumbers.push(
-                        o.fromTokenNumber.sub(inAmountSum));
-                    _tokenPair.orderMap[orderIndex].timestamps.push(block.timestamp);
+                    _tokenPair.orderMap[orderIndex].remainNumber=
+                        o.fromTokenNumber.sub(inAmountSum);
+                    _tokenPair.orderMap[orderIndex].timestamp=block.timestamp;
                 }
             }
         
@@ -851,9 +845,9 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                     Order memory o=tokenPair.orderMap[_orderIndexs[i]];
                     fromTokenAddrs[i]=o.fromTokenAddr;
                     toTokenNumbers[i]=o.toTokenNumber;
-                    originalNumbers[i]=o.originalNumbers[0];
-                    currentNumbers[i]=o.originalNumbers[o.originalNumbers.length-1];
-                    timestamps[i]=o.timestamps[0];
+                    originalNumbers[i]=o.fromTokenNumber;
+                    currentNumbers[i]=o.remainNumber;
+                    timestamps[i]=o.timestamp;
                     toTokenSums[i]=o.toTokenSum;
                 }
             }
@@ -891,9 +885,9 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                     makers[i]=o.maker;
                     fromTokenAddrs[i]=o.fromTokenAddr;
                     toTokenNumbers[i]=o.toTokenNumber;
-                    originalNumbers[i]=o.originalNumbers[0];
-                    currentNumbers[i]=o.originalNumbers[o.originalNumbers.length-1];
-                    timestamps[i]=o.timestamps[0];
+                    originalNumbers[i]=o.fromTokenNumber;
+                    currentNumbers[i]=o.remainNumber;
+                    timestamps[i]=o.timestamp;
                     toTokenSums[i]=o.toTokenSum;
                 }
             }
@@ -906,7 +900,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
     )public override view returns(
         address maker,//挂单者
         address fromTokenAddr,// 代币地址
-        uint256 originalNumber,//初始挂单量
+        uint256 remainNumber,//初始挂单量
         uint256 timestamp,//初始挂单时间
         uint256 currentNumber,//当前挂单存量
         uint256 toTokenNumber,//初始意向代币目标金额
@@ -920,9 +914,9 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                 maker=o.maker;
                 fromTokenAddr=o.fromTokenAddr;
                 toTokenNumber=o.toTokenNumber;
-                originalNumber=o.originalNumbers[0];
-                currentNumber=o.originalNumbers[o.originalNumbers.length-1];
-                timestamp=o.timestamps[0];
+                remainNumber=o.fromTokenNumber;
+                currentNumber=o.remainNumber;
+                timestamp=o.timestamp;
                 toTokenSum=o.toTokenSum;
             }
         }
@@ -985,19 +979,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
             }
         }
     }
-    function getOrderTimes(// 获取订单变更次数
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr,// 买入token地址
-        uint256 _orderIndex//必须是正确的数值
-    )public override view returns(uint256 times){
-        address pairAddr =getPair(_fromTokenAddr, _toTokenAddr);
-        if(pairAddr!=address(0)){
-            uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
-            if(tokenPairIndex!=0){
-                times=tokenPairArray[tokenPairIndex].orderMap[_orderIndex].timestamps.length;
-            }
-        }
-    }
+ 
     function getOrderSums(//获取交易对所有订单总下单数(包括所有历史和已取消的订单)
         address _fromTokenAddr,// 卖出token地址
         address _toTokenAddr// 买入token地址
@@ -1033,15 +1015,19 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         address _toTokenAddr,
         uint256 _targetOrderIndex,
         uint256 _fromTokenNumber,
-        uint256 _toTokenNumber
-    )public override view returns (uint256 closestOrderIndex){
+        uint256 _toTokenNumber,
+        uint256 _depth
+    )public override view returns (uint256 closestOrderIndex,uint8 end){
+        if(_depth==0){
+            return (_targetOrderIndex,0);
+        }
         address pairAddr = getPair(_fromTokenAddr, _toTokenAddr);
         if(pairAddr!=address(0)){
             uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
             if(tokenPairIndex!=0){
                 TokenPair storage _tokenPair=tokenPairArray[tokenPairIndex];
                 if(_tokenPair.orderNextSequence[_targetOrderIndex]==0
-                &&_tokenPair.orderPreSequence[_targetOrderIndex]==0){
+                	&&_tokenPair.orderPreSequence[_targetOrderIndex]==0){
                     _targetOrderIndex=_tokenPair.lastIndex[_fromTokenAddr];
                 }
                 if(_targetOrderIndex!=0){
@@ -1050,27 +1036,46 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                         _targetOrderIndex=_tokenPair.lastIndex[_fromTokenAddr];
                     }
                     if(_targetOrderIndex!=0){
-                        if(_fromTokenNumber.mul(o.toTokenNumber)<o.fromTokenNumber.mul(_toTokenNumber)){
-                            if(_tokenPair.orderNextSequence[_targetOrderIndex]==0){
-                                closestOrderIndex=_targetOrderIndex;
-                            }else{
-                                closestOrderIndex=getClosestOrderIndex(_fromTokenAddr,_toTokenAddr,
-                                    _tokenPair.orderNextSequence[_targetOrderIndex],_fromTokenNumber,_toTokenNumber);
-                            }
-                        }else{
-                            if(_tokenPair.orderPreSequence[_targetOrderIndex]==0){
-                                closestOrderIndex=_targetOrderIndex;
-                            }else{
-                                uint256 orderPreIndex=_tokenPair.orderPreSequence[_targetOrderIndex];
-                                if(_fromTokenNumber.mul(_tokenPair.orderMap[_targetOrderIndex].toTokenNumber)>
-                                    _tokenPair.orderMap[_targetOrderIndex].fromTokenNumber.mul(_toTokenNumber)){
-                                    closestOrderIndex=getClosestOrderIndex(_fromTokenAddr,_toTokenAddr,
-                                        orderPreIndex,_fromTokenNumber,_toTokenNumber);
-                                }else{
-                                    closestOrderIndex=_targetOrderIndex;
-                                }
-                            }
-                        }
+				        if(_fromTokenNumber.mul(_tokenPair.orderMap[_targetOrderIndex].toTokenNumber)<=
+				            _tokenPair.orderMap[_targetOrderIndex].fromTokenNumber.mul(_toTokenNumber)){
+				            uint256 orderNextSequence=_tokenPair.orderNextSequence[_targetOrderIndex];
+				            if(orderNextSequence==0){
+				               return (_targetOrderIndex,1);
+				            }else{
+				                if(_fromTokenNumber.mul(_tokenPair.orderMap[orderNextSequence].toTokenNumber)<=
+				                    _tokenPair.orderMap[orderNextSequence].fromTokenNumber.mul(_toTokenNumber)){
+				                    return getClosestOrderIndex(
+				                        _fromTokenAddr,
+				                        _toTokenAddr,
+				                        orderNextSequence,
+				                        _fromTokenNumber,
+				                        _toTokenNumber,
+				                        _depth.sub(1)
+				                    );
+				                }else{
+				                    return (_targetOrderIndex,1);
+				                }
+				            }
+				        }else{
+				            uint256 orderPreIndex=_tokenPair.orderPreSequence[_targetOrderIndex];
+				            if(orderPreIndex==0){
+				                return (_targetOrderIndex,1);
+				            }else{
+				                if(_fromTokenNumber.mul(_tokenPair.orderMap[orderPreIndex].toTokenNumber)>=
+				                    _tokenPair.orderMap[orderPreIndex].fromTokenNumber.mul(_toTokenNumber)){
+				                     return getClosestOrderIndex(
+				                        _fromTokenAddr,
+				                        _toTokenAddr,
+				                        orderPreIndex,
+				                        _fromTokenNumber,
+				                        _toTokenNumber,
+				                        _depth.sub(1)
+				                    );
+				                }else{
+				                  return (_targetOrderIndex,1);
+				                }
+				            }
+				        }
                     }
                 }
             }
@@ -1118,7 +1123,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
     }
      function getToNum(Order memory bo) internal pure returns (uint256 _to){
         _to=bo.toTokenNumber.mul(
-            bo.originalNumbers[bo.originalNumbers.length-1]
+            bo.remainNumber
         ).div(bo.fromTokenNumber).mul(1000).div(997);
     }
      /**
@@ -1206,9 +1211,8 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         address pairAddr = getPair(_fromTokenAddr, _toTokenAddr);
         if(pairAddr!=address(0)){
             uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
-            if(tokenPairIndex!=0){
-                return _IsCancelOrderIndex(_orderIndex,tokenPairIndex);
-            }
+            require(tokenPairIndex!=0,"tokenPair not exist");
+            return cancelMap[tokenPairIndex][_orderIndex]==1;
         }
         return false;
     }
@@ -1216,8 +1220,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         uint256 _orderIndex,
         uint256 _tokenPairIndex
     )internal view returns (bool){
-        return tokenPairArray[_tokenPairIndex].orderMap[_orderIndex].timestamps.length!=
-        tokenPairArray[_tokenPairIndex].orderMap[_orderIndex].originalNumbers.length;
+        return cancelMap[_tokenPairIndex][_orderIndex]==1;
     }
     function _IsTradeCompleteOrderIndex(
         uint256 _orderIndex,
