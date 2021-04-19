@@ -199,9 +199,9 @@ contract ReentrancyGuard {
 }
 interface IOrdersBook {
     function cancelOrder(
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr,// 买入token地址
-        uint256 _orderIndex// 具体订单号（目前是订单的唯一性标识）
+        address _fromTokenAddr,
+        address _toTokenAddr,
+        uint256 _orderIndex
     )external returns(bool);
     function addMarketOrder(
         address _fromTokenAddr,
@@ -217,90 +217,90 @@ interface IOrdersBook {
         uint256 _fromTokenNumber,
         uint256 _toTokenNumber
     )external payable returns(uint256 reserveNum) ;
-    function getInAmount(//需要测试是否会返回零
+    function getInAmount(
         uint256 fromNum,
         uint256 toNum,
         uint256 reserveA,
         uint256 reserveB
     ) external pure returns(uint256);
-    function getPageOrdersForMaker(// 分页获取所有订单号
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr,// 买入token地址
+    function getPageOrdersForMaker(
+        address _fromTokenAddr,
+        address _toTokenAddr,
         address _maker,
-        uint256 _type,//1:代表所有;2:代表已取消;3:代表已成交;4:代表未成交;5:代表已取消或者已成交
-        uint256 _start,//开始位置
-        uint256 _num//数量
+        uint256 _type,
+        uint256 _start,
+        uint256 _num
     )external view returns(uint256[] memory indexs);
-    function getPageOrderDetailsForMaker(// 分页获取所有订单号
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr,// 买入token地址
+    function getPageOrderDetailsForMaker(
+        address _fromTokenAddr,
+        address _toTokenAddr,
         address _maker,
-        uint256 _type,//1:代表所有;2:代表已取消;3:代表已成交;4:代表未成交;5:代表已取消或者已成交
-        uint256 _start,//开始位置
-        uint256 _num//数量
+        uint256 _type,
+        uint256 _start,
+        uint256 _num
     )external view returns(
-        address[] memory fromTokenAddrs,// 代币地址
-        uint256[] memory originalNumbers,//初始挂单量
-        uint256[] memory timestamps,//初始挂单时间
-        uint256[] memory currentNumbers,//当前挂单存量
-        uint256[] memory toTokenNumbers,//初始意向代币目标金额
-        uint256[] memory toTokenSums//已经获取的金额
+        address[] memory fromTokenAddrs,
+        uint256[] memory fromTokenNumbers,
+        uint256[] memory timestamps,
+        uint256[] memory remainNumbers,
+        uint256[] memory toTokenNumbers,
+        uint256[] memory toTokenSums
     );
     function getOrderByIndexBatch(
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr,// 买入token地址
-        uint256[] calldata _orderIndexs//必须是已存在的orderIndex，否则会得不到正确结果
+        address _fromTokenAddr,
+        address _toTokenAddr,
+        uint256[] calldata _orderIndexs
     )external view returns(
-        address[] memory makers,//挂单者
-        address[] memory fromTokenAddrs,// 代币地址
-        uint256[] memory originalNumbers,//初始挂单量
-        uint256[] memory timestamps,//初始挂单时间
-        uint256[] memory currentNumbers,//当前挂单存量
-        uint256[] memory toTokenNumbers,//初始意向代币目标金额
-        uint256[] memory toTokenSums//已经获取的金额
+        address[] memory makers,
+        address[] memory fromTokenAddrs,
+        uint256[] memory fromTokenNumbers,
+        uint256[] memory timestamps,
+        uint256[] memory remainNumbers,
+        uint256[] memory toTokenNumbers,
+        uint256[] memory toTokenSums
     );
-    function getOrderByIndex(// 根据订单号获取订单
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr,// 买入token地址
+    function getOrderByIndex(
+        address _fromTokenAddr,
+        address _toTokenAddr,
         uint256 _orderIndex
     )external view returns(
-        address maker,//挂单者
-        address fromTokenAddr,// 代币地址
-        uint256 remainNumber,//初始挂单量
-        uint256 timestamp,//初始挂单时间
-        uint256 currentNumber,//当前挂单存量
-        uint256 toTokenNumber,//初始意向代币目标金额
-        uint256 toTokenSum//已经获取的金额
+        address maker,
+        address fromTokenAddr,
+        uint256 fromTokenNumber,
+        uint256 timestamp,
+        uint256 remainNumber,
+        uint256 toTokenNumber,
+        uint256 toTokenSum
     );
-    function getPageOrderDetails(// 分页获取所有订单号
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr,// 买入token地址
-        uint256 _orderStartIndex,// 订单序号点
-        uint256 _records// 每次获取的个数
+    function getPageOrderDetails(
+        address _fromTokenAddr,
+        address _toTokenAddr,
+        uint256 _orderStartIndex,
+        uint256 _records
     )external view returns(
-        address[] memory makers,//挂单者
-        address[] memory fromTokenAddrs,// 代币地址
-        uint256[] memory originalNumbers,//初始挂单量
-        uint256[] memory timestamps,//初始挂单时间
-        uint256[] memory currentNumbers,//当前挂单存量
-        uint256[] memory toTokenNumbers,//初始意向代币目标金额
-        uint256[] memory toTokenSums//已经获取的金额
+        address[] memory makers,
+        address[] memory fromTokenAddrs,
+        uint256[] memory fromTokenNumbers,
+        uint256[] memory timestamps,
+        uint256[] memory remainNumbers,
+        uint256[] memory toTokenNumbers,
+        uint256[] memory toTokenSums
     );
-    function getPageOrders(// 分页获取所有订单号
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr,// 买入token地址
-        uint256 _orderStartIndex,// 订单序号点
-        uint256 _records// 每次获取的个数
+    function getPageOrders(
+        address _fromTokenAddr,
+        address _toTokenAddr,
+        uint256 _orderStartIndex,
+        uint256 _records
     )external view returns(uint256[] memory orderIndexs);
-    function getOrderSums(//获取交易对所有订单总下单数(包括所有历史和已取消的订单)
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr// 买入token地址
+    function getOrderSums(
+        address _fromTokenAddr,
+        address _toTokenAddr
     )external view returns(uint256 orderMaxIndex);
 
-    function getOrderSumsForMaker(//获取交易对某账户总下单数(包括所有历史和已取消的订单)
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr,// 买入token地址
-        address _maker//必须是正确的数值
+    function getOrderSumsForMaker(
+        address _fromTokenAddr,
+        address _toTokenAddr,
+        address _maker
     )external view returns(uint256 len);
 
     function getClosestOrderIndex(
@@ -345,28 +345,43 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
     address immutable public whtAddr;
     address public feeAddr;
     uint256 constant UINT256_MAX = ~uint256(0);
+    uint _marketLimit=100000;
+    mapping (address  => uint) public minLimitMap;
+    function setMarketLimit(
+	    uint marketLimit
+	) onlyOwner public returns (bool) {
+        _marketLimit=marketLimit;
+        return true;
+    }
+    function setMinLimit(
+        address _tokenAddr,
+        uint _minLimit
+    ) onlyOwner public returns(bool) {
+        minLimitMap[_tokenAddr] = _minLimit;
+        return true;
+    }
 
     struct Order{
         address payable maker;
         address fromTokenAddr;
         address toTokenAddr;
         uint256 remainNumber;
-        uint256 timestamp;
-        uint256 fromTokenNumber;// 代币挂单金额
-        uint256 toTokenNumber;// 意向代币目标金额
-        uint256 toTokenSum;// 已经获取的金额
+        uint256 orderTime;
+        uint256 fromTokenNumber;
+        uint256 toTokenNumber;
+        uint256 toTokenSum;
     }
     struct TokenPair{
         uint256 orderMaxIndex;
         mapping(address=> uint256) lastIndex;
-        mapping(uint256=> Order) orderMap;// orderIndex=》Order
-        mapping(uint256=> uint256) orderNextSequence;// 价格低的orderIndex=》价格高的orderIndex
-        mapping(uint256=> uint256) orderPreSequence;// 价格高的orderIndex=》价格低的orderIndex
-        mapping(address => uint256[]) ordersForAddress;// 地址=》该地址对应的orderIndex
+        mapping(uint256=> Order) orderMap;
+        mapping(uint256=> uint256) orderNextSequence;
+        mapping(uint256=> uint256) orderPreSequence;
+        mapping(address => uint256[]) ordersForAddress;
     }
-    TokenPair[] public tokenPairArray;// tokenPair数组
-    mapping (address  => uint256) public tokenPairIndexMap;// token0地址=>tokenPair数组下标
-    mapping (uint256  => mapping (uint256  => uint8)) public cancelMap;//是否是已取消订单
+    TokenPair[] public tokenPairArray;
+    mapping (address  => uint256) public tokenPairIndexMap;
+    mapping (uint256  => mapping (uint256  => uint8)) public cancelMap;
     constructor(address _whtAddr,address _uniswapV2Factory) payable  {
         whtAddr=_whtAddr;
         feeAddr=msg.sender;
@@ -381,9 +396,9 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         feeAddr=_feeAddr;
     }
     function cancelOrder(
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr,// 买入token地址
-        uint256 _orderIndex// 具体订单号（目前是订单的唯一性标识）
+        address _fromTokenAddr,
+        address _toTokenAddr,
+        uint256 _orderIndex
     )public override nonReentrant returns(bool) {
         address pairAddr=getPair(_fromTokenAddr,_toTokenAddr);
         uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
@@ -391,7 +406,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         TokenPair storage _tokenPair=tokenPairArray[tokenPairIndex];
         require(_tokenPair.orderMap[_orderIndex].maker==msg.sender);
         require(_orderIndex!=0);
-        cancelMap[tokenPairIndex][_orderIndex]=1;//已取消
+        cancelMap[tokenPairIndex][_orderIndex]=1;
         if(_tokenPair.lastIndex[_fromTokenAddr]==_orderIndex){
             _tokenPair.lastIndex[_fromTokenAddr]=_tokenPair.orderNextSequence[_orderIndex];
             _tokenPair.orderPreSequence[_tokenPair.lastIndex[_fromTokenAddr]]=0;
@@ -417,7 +432,6 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                 fromTokenNumber
             );
         }
-        _tokenPair.orderMap[_orderIndex].timestamp=block.timestamp;
         return true;
     }
 
@@ -473,7 +487,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         uint256 _toTokenNumber
     )public override payable returns(bool) {
         require(addOrder(_fromTokenAddr,_toTokenAddr,
-            _targetOrderIndex,_fromTokenNumber,_toTokenNumber.div(100000))==0);
+            _targetOrderIndex,_fromTokenNumber,_toTokenNumber.div(_marketLimit))==0);
         return true;
     }
    
@@ -484,6 +498,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         uint256 _fromTokenNumber,
         uint256 _toTokenNumber
     )public override payable nonReentrant returns(uint256 reserveNum) {
+        require(_fromTokenNumber>=minLimitMap[_fromTokenAddr],"min limit");
         if(_fromTokenAddr==whtAddr&&msg.value>=_fromTokenNumber){
             IWHT(whtAddr).deposit{value : msg.value}();
         }else{
@@ -495,7 +510,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
             );
         }
         uint256 tokenPairIndex=tokenPairIndexMap[getPair(_fromTokenAddr,_toTokenAddr)];
-        if(tokenPairIndex== 0){//如果交易对不存在就新增一个
+        if(tokenPairIndex== 0){
             tokenPairArray.push();
             tokenPairIndex=tokenPairArray.length-1 ;
             tokenPairIndexMap[getPair(_fromTokenAddr,_toTokenAddr)]=tokenPairIndex;
@@ -541,76 +556,82 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
     function checkTrade(TokenPair storage _tokenPair,uint256 orderIndex) internal {
             Order memory o=_tokenPair.orderMap[orderIndex];
             (uint256 reserveA,uint256 reserveB)=getReserves(o.fromTokenAddr, o.toTokenAddr);
-            uint256 fee=0;   
             uint256 cInAmount=getInAmount(o.fromTokenNumber,o.toTokenNumber,reserveA,reserveB);//计算达到当前订单价格需要付出的币数量
-            if(cInAmount>1){//如果流动池价格低于当前价格
+            if(cInAmount>1){
                 {
-                    if(cInAmount>o.fromTokenNumber){//如果精度差距，取小的数值
+                    uint beginBal=IERC20(o.fromTokenAddr).balanceOf(address(this));
+                    if(cInAmount>o.fromTokenNumber){
                         cInAmount=o.fromTokenNumber;
                     }
-                    uint256 inAmountSum=0;
-                    uint256 outAmountSum=0;
-                    uint256 tokenBIndex=_tokenPair.lastIndex[o.toTokenAddr];
-                    if(tokenBIndex!=0){
-                        Order memory bo=_tokenPair.orderMap[tokenBIndex];
-                        uint256 newInAmount=getInAmount(
-                            bo.toTokenNumber,bo.fromTokenNumber,reserveA,reserveB);//计算对手订单价格需要付出的币数量
-                        if(cInAmount>=newInAmount){//全部成交超过对手订单价格
+                    uint[3] memory numArray=[0,0,_tokenPair.lastIndex[o.toTokenAddr]];
+                    if(numArray[2]!=0){
+                        Order memory bo=_tokenPair.orderMap[numArray[2]];
+                        uint256 newInAmount=0;
+                        if(o.fromTokenNumber.mul(bo.fromTokenNumber)==o.toTokenNumber.mul(bo.toTokenNumber)){
+                            newInAmount=cInAmount;
+                        }else{
+                            newInAmount=getInAmount(
+                            bo.toTokenNumber,bo.fromTokenNumber,reserveA,reserveB);
+                        }
+                        if(cInAmount>=newInAmount){
                             uint256 tokenANum=o.fromTokenNumber.sub(newInAmount);
-                            while(tokenBIndex>0&&tokenANum>0){
+                            while(numArray[2]>0&&tokenANum>0){
                                 {
-                                    if(tokenANum>=getToNum(bo)){//如果全部成交也不够
+                                    uint tonum=getToNum(bo);
+                                    uint[2] memory tonums=[tonum,tonum.mul(997).div(1000)];
+                                    if(tokenANum>=tonums[0]){
                                         safeTransfer(
                                             IERC20(bo.toTokenAddr),
                                             bo.maker,
-                                            getToNum(bo).mul(997).div(1000)
+                                            tonums[1]
                                         );
-                                        fee=fee.add(getToNum(bo).mul(3).div(1000));
-                                        inAmountSum=inAmountSum.add(getToNum(bo));
-                                        outAmountSum=outAmountSum.add(bo.remainNumber);
-                                        uint newBIndex=_tokenPair.orderNextSequence[tokenBIndex];
+                                        numArray[0]=numArray[0].add(tonum);
+                                        numArray[1]=numArray[1].add(bo.remainNumber);
+                                        uint newBIndex=_tokenPair.orderNextSequence[numArray[2]];
                                         _tokenPair.lastIndex[o.toTokenAddr]=newBIndex;
-                                        _tokenPair.orderNextSequence[tokenBIndex]=0;
+                                        _tokenPair.orderNextSequence[numArray[2]]=0;
                                         if(newBIndex!=0){
-                                            _tokenPair.orderPreSequence[newBIndex]=0;
+                                            _tokenPair.orderPreSequence[numArray[2]]=0;
                                         }
-                                        _tokenPair.orderMap[tokenBIndex].toTokenSum=
-                                        getToNum(bo).mul(997).div(1000).add(_tokenPair.orderMap[tokenBIndex].toTokenSum);
-                                        _tokenPair.orderMap[tokenBIndex].remainNumber=0;
-                                        _tokenPair.orderMap[tokenBIndex].timestamp=block.timestamp;
-                                        tokenBIndex=newBIndex;
-                                        if(tokenBIndex!=0){
-                                            bo=_tokenPair.orderMap[tokenBIndex];
-                                            newInAmount=getInAmount(bo.toTokenNumber,bo.fromTokenNumber,reserveA,reserveB);
-                                            if(cInAmount>=newInAmount&&o.fromTokenNumber>=newInAmount.add(inAmountSum)){//继续向上一条订单价格推进
-                                                tokenANum=o.fromTokenNumber.sub(newInAmount).sub(inAmountSum);
+                                        _tokenPair.orderMap[numArray[2]].toTokenSum=
+                                        tonums[1].add(_tokenPair.orderMap[numArray[2]].toTokenSum);
+                                        _tokenPair.orderMap[numArray[2]].remainNumber=0;
+                                        numArray[2]=newBIndex;
+                                        if(numArray[2]!=0){
+                                            bo=_tokenPair.orderMap[numArray[2]];
+                                            if(o.fromTokenNumber.mul(bo.fromTokenNumber)==o.toTokenNumber.mul(bo.toTokenNumber)){
+                                                newInAmount=cInAmount;
                                             }else{
-                                                tokenANum=0;//停止向上遍列
+                                                newInAmount=getInAmount(
+                                                bo.toTokenNumber,bo.fromTokenNumber,reserveA,reserveB);//计算对手订单价格需要付出的币数量
+                                            }
+                                            if(cInAmount>=newInAmount&&o.fromTokenNumber>=newInAmount.add(numArray[0])){//继续向上一条订单价格推进
+                                                tokenANum=o.fromTokenNumber.sub(newInAmount).sub(numArray[0]);
+                                            }else{
+                                                tokenANum=0;
                                             }
                                         }
-                                    }else{//如果最后一条订单簿能成交够,部分成交订单簿
+                                    }else{
                                         uint256 atoNum=tokenANum.mul(997).div(1000);
                                         safeTransfer(
                                             IERC20(bo.toTokenAddr),
                                             bo.maker,
                                             atoNum
                                         );
-                                        fee=fee.add(tokenANum.mul(3).div(1000));
-                                        inAmountSum=inAmountSum.add(tokenANum);
+                                        numArray[0]=numArray[0].add(tokenANum);
                                         uint256 tokenBNum=atoNum.mul(bo.fromTokenNumber) / bo.toTokenNumber;
-                                        outAmountSum=outAmountSum.add(tokenBNum);
-                                        _tokenPair.orderMap[tokenBIndex].remainNumber=
+                                        numArray[1]=numArray[1].add(tokenBNum);
+                                        _tokenPair.orderMap[numArray[2]].remainNumber=
                                             bo.remainNumber.sub(tokenBNum);
-                                        _tokenPair.orderMap[tokenBIndex].toTokenSum=atoNum.add(bo.toTokenSum);
-                                        _tokenPair.orderMap[tokenBIndex].timestamp=block.timestamp;
-                                        tokenANum=0;//停止向上遍列
+                                        _tokenPair.orderMap[numArray[2]].toTokenSum=atoNum.add(bo.toTokenSum);
+                                        tokenANum=0;
                                     }
                                 }
                             }
                         }
 
                     }
-                    uint256 inAmount=o.fromTokenNumber.sub(inAmountSum);
+                    uint256 inAmount=o.fromTokenNumber.sub(numArray[0]);
                     if(cInAmount<inAmount){
                         inAmount=cInAmount;
                     }
@@ -624,7 +645,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                                     inAmount
                                 )
                             );
-                            inAmountSum=inAmountSum.add(inAmount);
+                            numArray[0]=numArray[0].add(inAmount);
                             uint256 numerator = reserveA.mul(1000);
                             uint256 denominator = reserveB.sub(1).mul(997);
                             uint256 amountIn = (numerator / denominator).add(2);
@@ -640,28 +661,28 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                                         amountOut, 0, address(this), new bytes(0)
                                     );
                                 }
-                                outAmountSum=outAmountSum.add(amountOut);
+                                numArray[1]=numArray[1].add(amountOut);
                             }
                         }
                     }
-                    if(inAmountSum>0){
-                        if(outAmountSum>0){
+                    if(numArray[0]>0){
+                        if(numArray[1]>0){
                             safeTransfer(
                                 IERC20(o.toTokenAddr),
                                 o.maker,
-                                outAmountSum
+                                numArray[1]
                             );
-                            _tokenPair.orderMap[orderIndex].toTokenSum=outAmountSum.add(
+                            _tokenPair.orderMap[orderIndex].toTokenSum=numArray[1].add(
                             _tokenPair.orderMap[orderIndex].toTokenSum);
                         }
                         _tokenPair.orderMap[orderIndex].remainNumber=
-                            o.fromTokenNumber.sub(inAmountSum);
-                        _tokenPair.orderMap[orderIndex].timestamp=block.timestamp;
-                        if(fee>0){
+                            o.fromTokenNumber.sub(numArray[0]);
+                        uint remainBal=beginBal.sub(IERC20(o.fromTokenAddr).balanceOf(address(this)));
+                        if(remainBal>_tokenPair.orderMap[orderIndex].remainNumber){
 		                    safeTransfer(
 		                        IERC20(o.fromTokenAddr),
 		                        feeAddr,
-		                        fee
+		                        remainBal.sub(_tokenPair.orderMap[orderIndex].remainNumber)
 		                    );
 		                }
                         
@@ -669,14 +690,13 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                 }
 
             }else{
-                uint256 tokenBIndex=_tokenPair.lastIndex[o.toTokenAddr];
-                uint256 inAmountSum=0;
-                uint256 outAmountSum=0;
+                uint[3] memory numArray=[0,0,_tokenPair.lastIndex[o.toTokenAddr]];
                 uint256 tokenANum=o.fromTokenNumber;
-                while(tokenBIndex!=0&&tokenANum!=0){
-                    Order memory bo=_tokenPair.orderMap[tokenBIndex];
+                uint beginBal=IERC20(o.fromTokenAddr).balanceOf(address(this));
+                while(numArray[2]!=0&&tokenANum!=0){
+                    Order memory bo=_tokenPair.orderMap[numArray[2]];
                     if(o.fromTokenNumber.mul(bo.fromTokenNumber)==o.toTokenNumber.mul(bo.toTokenNumber)){
-                        tokenANum=o.fromTokenNumber.sub(inAmountSum);
+                        tokenANum=o.fromTokenNumber.sub(numArray[0]);
                         uint256 toNum=getToNum(bo);
                         if(tokenANum>=toNum){
                             uint256 atoNum=toNum.mul(997).div(1000);
@@ -685,19 +705,17 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                                 bo.maker,
                                 atoNum
                             );
-                            fee=fee.add(toNum.mul(3).div(1000));
-                            inAmountSum=inAmountSum.add(toNum);
-                            outAmountSum=outAmountSum.add(bo.remainNumber);
-                            uint newBIndex=_tokenPair.orderNextSequence[tokenBIndex];
+                            numArray[0]=numArray[0].add(toNum);
+                            numArray[1]=numArray[1].add(bo.remainNumber);
+                            uint newBIndex=_tokenPair.orderNextSequence[numArray[2]];
                             _tokenPair.lastIndex[o.toTokenAddr]=newBIndex;
-                            _tokenPair.orderNextSequence[tokenBIndex]=0;
+                            _tokenPair.orderNextSequence[numArray[2]]=0;
                             if(newBIndex!=0){
                                 _tokenPair.orderPreSequence[newBIndex]=0;
                             }
-                            _tokenPair.orderMap[tokenBIndex].toTokenSum=atoNum.add(_tokenPair.orderMap[tokenBIndex].toTokenSum);
-                            _tokenPair.orderMap[tokenBIndex].remainNumber=0;
-                            _tokenPair.orderMap[tokenBIndex].timestamp=block.timestamp;
-                            tokenBIndex=newBIndex;
+                            _tokenPair.orderMap[numArray[2]].toTokenSum=atoNum.add(_tokenPair.orderMap[numArray[2]].toTokenSum);
+                            _tokenPair.orderMap[numArray[2]].remainNumber=0;
+                            numArray[2]=newBIndex;
                         }else{
                             uint256 atoNum=tokenANum.mul(997).div(1000);
                             safeTransfer(
@@ -705,38 +723,36 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                                 bo.maker,
                                 atoNum
                             );
-                            fee=fee.add(tokenANum.mul(3).div(1000));
-                            inAmountSum=o.fromTokenNumber;
+                            numArray[0]=o.fromTokenNumber;
                             uint256 tokenBNum=atoNum.mul(bo.fromTokenNumber) / bo.toTokenNumber;
-                            outAmountSum=outAmountSum.add(tokenBNum);
-                            _tokenPair.orderMap[tokenBIndex].remainNumber=
+                            numArray[1]=numArray[1].add(tokenBNum);
+                            _tokenPair.orderMap[numArray[2]].remainNumber=
                                 bo.remainNumber.sub(tokenBNum);
-                            _tokenPair.orderMap[tokenBIndex].toTokenSum=atoNum.add(bo.toTokenSum);
-                            _tokenPair.orderMap[tokenBIndex].timestamp=block.timestamp;
+                            _tokenPair.orderMap[numArray[2]].toTokenSum=atoNum.add(bo.toTokenSum);
                             break;
                         }
                     }else{
                         break;
                     }
                 }
-                if(inAmountSum>0){
+                if(numArray[0]>0){
                     safeTransfer(
                         IERC20(o.toTokenAddr),
                         o.maker,
-                        outAmountSum
+                        numArray[1]
                     );
-                    if(fee>0){
+                    _tokenPair.orderMap[orderIndex].toTokenSum=numArray[1].add(
+                        _tokenPair.orderMap[orderIndex].toTokenSum);
+                    _tokenPair.orderMap[orderIndex].remainNumber=
+                        o.fromTokenNumber.sub(numArray[0]);
+                    uint remainBal=beginBal.sub(IERC20(o.fromTokenAddr).balanceOf(address(this)));
+                    if(remainBal>_tokenPair.orderMap[orderIndex].remainNumber){
                         safeTransfer(
                             IERC20(o.fromTokenAddr),
                             feeAddr,
-                            fee
+                            remainBal.sub(_tokenPair.orderMap[orderIndex].remainNumber)
                         );
                     }
-                    _tokenPair.orderMap[orderIndex].toTokenSum=outAmountSum.add(
-                        _tokenPair.orderMap[orderIndex].toTokenSum);
-                    _tokenPair.orderMap[orderIndex].remainNumber=
-                        o.fromTokenNumber.sub(inAmountSum);
-                    _tokenPair.orderMap[orderIndex].timestamp=block.timestamp;
                 }
             }
         
@@ -744,7 +760,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
     function joinNumber(
         uint256 _number,
         uint256[] memory narray
-    )internal pure returns(uint256[] memory){
+    )public pure returns(uint256[] memory){
         if(_number==0){
             return narray;
         }
@@ -756,13 +772,13 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         narray1[nl]=_number;
         return narray1;
     }
-    function getPageOrdersForMaker(// 分页获取所有订单号
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr,// 买入token地址
+    function getPageOrdersForMaker(
+        address _fromTokenAddr,
+        address _toTokenAddr,
         address _maker,
-        uint256 _type,//1:代表所有;2:代表已取消;3:代表已成交;4:代表未成交;5:代表已取消或者已成交
-        uint256 _start,//开始位置
-        uint256 _num//数量
+        uint256 _type,
+        uint256 _start,
+        uint256 _num
     )public override view returns(uint256[] memory indexs){
         address pairAddr =getPair(_fromTokenAddr, _toTokenAddr);
         if(pairAddr!=address(0)){
@@ -801,10 +817,10 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                         }
                     }
                     indexs=joinNumber(cindexs[i],indexs);
-                    if(ll==indexs.length){//新数组长度没变停止
+                    if(ll==indexs.length){
                         break;
                     }
-                    ll=indexs.length;//更新新数组长度
+                    ll=indexs.length;
                     if(ll==_num){
                         break;
                     }
@@ -814,20 +830,20 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         }
     }
 
-    function getPageOrderDetailsForMaker(// 分页获取所有订单号
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr,// 买入token地址
+    function getPageOrderDetailsForMaker(
+        address _fromTokenAddr,
+        address _toTokenAddr,
         address _maker,
-        uint256 _type,//1:代表所有;2:代表已取消;3:代表已成交;4:代表未成交;5:代表已取消或者已成交
-        uint256 _start,//开始位置
-        uint256 _num//数量
+        uint256 _type,
+        uint256 _start,
+        uint256 _num
     )public override view returns(
-        address[] memory fromTokenAddrs,// 代币地址
-        uint256[] memory originalNumbers,//初始挂单量
-        uint256[] memory timestamps,//初始挂单时间
-        uint256[] memory currentNumbers,//当前挂单存量
-        uint256[] memory toTokenNumbers,//初始意向代币目标金额
-        uint256[] memory toTokenSums//已经获取的金额
+        address[] memory fromTokenAddrs,
+        uint256[] memory fromTokenNumbers,
+        uint256[] memory timestamps,
+        uint256[] memory remainNumbers,
+        uint256[] memory toTokenNumbers,
+        uint256[] memory toTokenSums
     ){
         address pairAddr = getPair(_fromTokenAddr, _toTokenAddr);
         if(pairAddr!=address(0)){
@@ -836,8 +852,8 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                 uint256[] memory _orderIndexs=getPageOrdersForMaker(_fromTokenAddr,_toTokenAddr,_maker,_type,_start,_num);
                 uint256 l=_orderIndexs.length;
                 fromTokenAddrs=new address[](l);
-                originalNumbers=new uint256[](l);
-                currentNumbers=new uint256[](l);
+                fromTokenNumbers=new uint256[](l);
+                remainNumbers=new uint256[](l);
                 toTokenNumbers=new uint256[](l);
                 timestamps=new uint256[](l);
                 toTokenSums=new uint256[](l);
@@ -845,9 +861,9 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                     Order memory o=tokenPair.orderMap[_orderIndexs[i]];
                     fromTokenAddrs[i]=o.fromTokenAddr;
                     toTokenNumbers[i]=o.toTokenNumber;
-                    originalNumbers[i]=o.fromTokenNumber;
-                    currentNumbers[i]=o.remainNumber;
-                    timestamps[i]=o.timestamp;
+                    fromTokenNumbers[i]=o.fromTokenNumber;
+                    remainNumbers[i]=o.remainNumber;
+                    timestamps[i]=o.orderTime;
                     toTokenSums[i]=o.toTokenSum;
                 }
             }
@@ -855,17 +871,17 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
     }
 
     function getOrderByIndexBatch(
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr,// 买入token地址
-        uint256[] memory _orderIndexs//必须是已存在的orderIndex，否则会得不到正确结果
+        address _fromTokenAddr,
+        address _toTokenAddr,
+        uint256[] memory _orderIndexs
     )public override view returns(
-        address[] memory makers,//挂单者
-        address[] memory fromTokenAddrs,// 代币地址
-        uint256[] memory originalNumbers,//初始挂单量
-        uint256[] memory timestamps,//初始挂单时间
-        uint256[] memory currentNumbers,//当前挂单存量
-        uint256[] memory toTokenNumbers,//初始意向代币目标金额
-        uint256[] memory toTokenSums//已经获取的金额
+        address[] memory makers,
+        address[] memory fromTokenAddrs,
+        uint256[] memory fromTokenNumbers,
+        uint256[] memory timestamps,
+        uint256[] memory remainNumbers,
+        uint256[] memory toTokenNumbers,
+        uint256[] memory toTokenSums
     ){
         address pairAddr = getPair(_fromTokenAddr, _toTokenAddr);
         if(pairAddr!=address(0)){
@@ -875,8 +891,8 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                 uint256 l=_orderIndexs.length;
                 makers=new  address[](l);
                 fromTokenAddrs=new address[](l);
-                originalNumbers=new uint256[](l);
-                currentNumbers=new uint256[](l);
+                fromTokenNumbers=new uint256[](l);
+                remainNumbers=new uint256[](l);
                 toTokenNumbers=new uint256[](l);
                 timestamps=new uint256[](l);
                 toTokenSums=new uint256[](l);
@@ -885,25 +901,25 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                     makers[i]=o.maker;
                     fromTokenAddrs[i]=o.fromTokenAddr;
                     toTokenNumbers[i]=o.toTokenNumber;
-                    originalNumbers[i]=o.fromTokenNumber;
-                    currentNumbers[i]=o.remainNumber;
-                    timestamps[i]=o.timestamp;
+                    fromTokenNumbers[i]=o.fromTokenNumber;
+                    remainNumbers[i]=o.remainNumber;
+                    timestamps[i]=o.orderTime;
                     toTokenSums[i]=o.toTokenSum;
                 }
             }
         }
     }
-    function getOrderByIndex(// 根据订单号获取订单
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr,// 买入token地址
+    function getOrderByIndex(
+        address _fromTokenAddr,
+        address _toTokenAddr,
         uint256 _orderIndex
     )public override view returns(
-        address maker,//挂单者
-        address fromTokenAddr,// 代币地址
-        uint256 remainNumber,//初始挂单量
-        uint256 timestamp,//初始挂单时间
-        uint256 currentNumber,//当前挂单存量
-        uint256 toTokenNumber,//初始意向代币目标金额
+        address maker,
+        address fromTokenAddr,
+        uint256 fromTokenNumber,
+        uint256 timestamp,
+        uint256 remainNumber,
+        uint256 toTokenNumber,
         uint256 toTokenSum
     ){
         address pairAddr =getPair(_fromTokenAddr, _toTokenAddr);
@@ -914,36 +930,36 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                 maker=o.maker;
                 fromTokenAddr=o.fromTokenAddr;
                 toTokenNumber=o.toTokenNumber;
-                remainNumber=o.fromTokenNumber;
-                currentNumber=o.remainNumber;
-                timestamp=o.timestamp;
+                fromTokenNumber=o.fromTokenNumber;
+                remainNumber=o.remainNumber;
+                timestamp=o.orderTime;
                 toTokenSum=o.toTokenSum;
             }
         }
     }
 
-    function getPageOrderDetails(// 分页获取所有订单号
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr,// 买入token地址
-        uint256 _orderStartIndex,// 订单序号点
-        uint256 _records// 每次获取的个数
+    function getPageOrderDetails(
+        address _fromTokenAddr,
+        address _toTokenAddr,
+        uint256 _orderStartIndex,
+        uint256 _records
     )external override view returns(
-        address[] memory makers,//挂单者
-        address[] memory fromTokenAddrs,// 代币地址
-        uint256[] memory originalNumbers,//初始挂单量
-        uint256[] memory timestamps,//初始挂单时间
-        uint256[] memory currentNumbers,//当前挂单存量
-        uint256[] memory toTokenNumbers,//初始意向代币目标金额
-        uint256[] memory toTokenSums//已经获取的金额
+        address[] memory makers,
+        address[] memory fromTokenAddrs,
+        uint256[] memory fromTokenNumbers,
+        uint256[] memory timestamps,
+        uint256[] memory remainNumbers,
+        uint256[] memory toTokenNumbers,
+        uint256[] memory toTokenSums
     ){
         return getOrderByIndexBatch(_fromTokenAddr,_toTokenAddr,
             getPageOrders(_fromTokenAddr,_toTokenAddr,_orderStartIndex,_records));
     }
-    function getPageOrders(// 分页获取所有订单号
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr,// 买入token地址
-        uint256 _orderStartIndex,// 订单序号点
-        uint256 _records// 每次获取的个数
+    function getPageOrders(
+        address _fromTokenAddr,
+        address _toTokenAddr,
+        uint256 _orderStartIndex,
+        uint256 _records
     )public override view returns(uint256[] memory orderIndexs){
         address pairAddr = getPair(_fromTokenAddr, _toTokenAddr);
         if(pairAddr!=address(0)){
@@ -963,14 +979,14 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
                     if(_records!=1){
                         uint256[] memory newOrderIndexs=joinNumber(
                             tokenPair.orderNextSequence[orderIndexs[0]],orderIndexs);
-                        uint256 ll=newOrderIndexs.length;//新数组长度
+                        uint256 ll=newOrderIndexs.length;
                         uint256 orderNextSequence=tokenPair.orderNextSequence[newOrderIndexs[ll-1]];
                         while(orderNextSequence>0&&ll<_records){
                             newOrderIndexs=joinNumber(orderNextSequence,newOrderIndexs);
-                            if(ll==newOrderIndexs.length){//新数组长度没变停止
+                            if(ll==newOrderIndexs.length){
                                 break;
                             }
-                            ll=newOrderIndexs.length;//更新新数组长度
+                            ll=newOrderIndexs.length;
                             orderNextSequence=tokenPair.orderNextSequence[newOrderIndexs[ll-1]];
                         }
                         orderIndexs=newOrderIndexs;
@@ -980,9 +996,9 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         }
     }
  
-    function getOrderSums(//获取交易对所有订单总下单数(包括所有历史和已取消的订单)
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr// 买入token地址
+    function getOrderSums(
+        address _fromTokenAddr,
+        address _toTokenAddr
     )public override view returns(uint256 orderMaxIndex){
         address pairAddr = getPair(_fromTokenAddr, _toTokenAddr);
         if(pairAddr!=address(0)){
@@ -993,10 +1009,10 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         }
     }
 
-    function getOrderSumsForMaker(//获取交易对某账户总下单数(包括所有历史和已取消的订单)
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr,// 买入token地址
-        address _maker//必须是正确的数值
+    function getOrderSumsForMaker(
+        address _fromTokenAddr,
+        address _toTokenAddr,
+        address _maker
     )public override view returns(uint256 len){
         address pairAddr =getPair(_fromTokenAddr, _toTokenAddr);
         if(pairAddr!=address(0)){
@@ -1133,7 +1149,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
      * @param account address of the account to check
      * @return whether the target address is a contract
      */
-    function isContract(address account) internal view returns (bool) {
+    function isContract(address account) public view returns (bool) {
         uint256 size;
         // XXX Currently there is no better way to check if there is a contract in an address
         // than to check the size of the code at that address.
@@ -1145,11 +1161,11 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         assembly { size := extcodesize(account) }
         return size > 0;
     }
-    function safeTransferHT(address to, uint value) internal {
+    function safeTransferHT(address to, uint value) public {
         (bool success,) = to.call{value : value}(new bytes(0));
         require(success, 'TransferHelper: HT_TRANSFER_FAILED');
     }
-     function safeTransfer(IERC20 token, address to, uint256 value) internal {
+    function safeTransfer(IERC20 token, address to, uint256 value) internal {
         if(address(token)==whtAddr){
             IWHT(whtAddr).withdraw(value);
             safeTransferHT(to,value);
@@ -1158,7 +1174,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
         }
     }
 
-    function safeTransferFrom(IERC20 token, address from, address to, uint256 value) internal {
+    function safeTransferFrom(IERC20 token, address from, address to, uint256 value) public {
         callOptionalReturn(token, abi.encodeWithSelector(token.transferFrom.selector, from, to, value));
     }
 
@@ -1168,7 +1184,7 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
      * @param token The token targeted by the call.
      * @param data The call data (encoded using abi.encode or one of its variants).
      */
-    function callOptionalReturn(IERC20 token, bytes memory data) private {
+    function callOptionalReturn(IERC20 token, bytes memory data) public {
         // We need to perform a low level call here, to bypass Solidity's return data size checking mechanism, since
         // we're implementing it ourselves.
 
@@ -1187,17 +1203,17 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
             require(abi.decode(returndata, (bool)),"transfer fail");
         }
     }
-    function sortTokens(address tokenA, address tokenB) internal pure returns (address token0, address token1) {
+    function sortTokens(address tokenA, address tokenB) public pure returns (address token0, address token1) {
         (token0, token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
     }
     // fetches and sorts the reserves for a pair
-    function getReserves(address tokenA, address tokenB) internal view returns (uint reserveA, uint reserveB) {
+    function getReserves(address tokenA, address tokenB) public view returns (uint reserveA, uint reserveB) {
         (address token0,) = sortTokens(tokenA, tokenB);
         (uint reserve0, uint reserve1,) = IUniswapV2Pair(getPair(tokenA, tokenB)).getReserves();
         (reserveA, reserveB) = tokenA == token0 ? (reserve0, reserve1) : (reserve1, reserve0);
     }
     // given an input amount of an asset and pair reserves, returns the maximum output amount of the other asset
-    function getAmountOut(uint amountIn, uint reserveIn, uint reserveOut) internal pure returns (uint amountOut) {
+    function getAmountOut(uint amountIn, uint reserveIn, uint reserveOut) public pure returns (uint amountOut) {
         uint amountInWithFee = amountIn.mul(997);
         uint numerator = amountInWithFee.mul(reserveOut);
         uint denominator = reserveIn.mul(1000).add(amountInWithFee);
@@ -1219,13 +1235,13 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
     function _IsCancelOrderIndex(
         uint256 _orderIndex,
         uint256 _tokenPairIndex
-    )internal view returns (bool){
+    )public view returns (bool){
         return cancelMap[_tokenPairIndex][_orderIndex]==1;
     }
     function _IsTradeCompleteOrderIndex(
         uint256 _orderIndex,
         uint256 _tokenPairIndex
-    )internal view returns (bool){
+    )public view returns (bool){
         bool b=!_IsCancelOrderIndex(_orderIndex,_tokenPairIndex);
         return b&&_orderIndex!=tokenPairArray[_tokenPairIndex].lastIndex[tokenPairArray[_tokenPairIndex].orderMap[_orderIndex].fromTokenAddr]
         &&(tokenPairArray[_tokenPairIndex].orderNextSequence[_orderIndex]==0&&
@@ -1234,14 +1250,14 @@ contract OrdersBook is Ownable,ReentrancyGuard,IOrdersBook{
     function _IsTradeNotCompleteOrderIndex(
         uint256 _orderIndex,
         uint256 _tokenPairIndex
-    )internal view returns (bool){
+    )public view returns (bool){
         return
         _orderIndex==tokenPairArray[_tokenPairIndex].lastIndex[tokenPairArray[_tokenPairIndex].orderMap[_orderIndex].fromTokenAddr]||
         tokenPairArray[_tokenPairIndex].orderNextSequence[_orderIndex]!=0||
         tokenPairArray[_tokenPairIndex].orderPreSequence[_orderIndex]!=0;
     }
     // babylonian method (https://en.wikipedia.org/wiki/Methods_of_computing_square_roots#Babylonian_method)
-    function sqrt(uint256 y) internal pure returns (uint256 z) {
+    function sqrt(uint256 y) public pure returns (uint256 z) {
         if (y > 3) {
             z = y;
             uint x = y / 2 + 1;
