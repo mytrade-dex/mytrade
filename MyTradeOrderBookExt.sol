@@ -171,13 +171,21 @@ interface IMyTradeOrderBookExt{
         address _fromTokenAddr,
         address _toTokenAddr,
         uint256 _orderIndex,
-        uint256 _toTokenNum
+        uint256 _outNum,
+        uint256 _inNum
     )external;
     function getOrderIndexsForMaker(
         address _fromTokenAddr,
         address _toTokenAddr,
         address _maker
     )external view returns(uint256[] memory cindexs);
+    function getPageOrdersForMaker(// 分页获取所有订单号
+        address _fromTokenAddr,// 卖出token地址
+        address _toTokenAddr,// 买入token地址
+        address _maker,
+        uint256 _start,//开始位置
+        uint256 _num//数量
+    )external view returns(uint256[] memory indexs);
     function getOrderInfo(
         address _fromTokenAddr,
         address _toTokenAddr,
@@ -260,7 +268,6 @@ contract MyTradeOrderBookExt is Ownable,ReentrancyGuard,IMyTradeOrderBookExt{
         uint256 _orderIndex,// 具体订单号（目前是订单的唯一性标识）
         uint256 _num
     )onlyApproved(msg.sender) override public {
-        
         emit CancelOrderWithNum(_fromTokenAddr,_toTokenAddr,_orderIndex,_num);
     }
     event AddOrder(
@@ -295,20 +302,22 @@ contract MyTradeOrderBookExt is Ownable,ReentrancyGuard,IMyTradeOrderBookExt{
         address indexed _fromTokenAddr,
         address indexed _toTokenAddr,
         uint256 indexed _orderIndex,
-        uint256 _toTokenNum
+        uint256 _outNum,
+        uint256 _inNum
     );
     function updateOrderInfo(
         address _fromTokenAddr,
         address _toTokenAddr,
         uint256 _orderIndex,
-        uint256 _toTokenNum
+        uint256 _outNum,
+        uint256 _inNum
     )onlyApproved(msg.sender) override public {
         address pairAddr=uniswapV2Factory.getPair(_fromTokenAddr, _toTokenAddr);
         uint256 tokenPairIndex=tokenPairExtIndexMap[pairAddr];
         tokenPairExtArray[tokenPairIndex].toTokenSumMap[_orderIndex]=
-        _toTokenNum.add(tokenPairExtArray[tokenPairIndex].toTokenSumMap[_orderIndex]);
+        _outNum.add(tokenPairExtArray[tokenPairIndex].toTokenSumMap[_orderIndex]);
         tokenPairExtArray[tokenPairIndex].timeMap[_orderIndex]=block.timestamp;
-        emit UpdateOrderInfo(_fromTokenAddr,_toTokenAddr,_orderIndex,_toTokenNum);
+        emit UpdateOrderInfo(_fromTokenAddr,_toTokenAddr,_orderIndex,_outNum,_inNum);
     }
     function getOrderIndexsForMaker(
         address _fromTokenAddr,
@@ -318,6 +327,21 @@ contract MyTradeOrderBookExt is Ownable,ReentrancyGuard,IMyTradeOrderBookExt{
         address pairAddr=uniswapV2Factory.getPair(_fromTokenAddr, _toTokenAddr);
         uint256 tokenPairIndex=tokenPairExtIndexMap[pairAddr];
         return tokenPairExtArray[tokenPairIndex].ordersForAddress[_maker];
+    }
+    function getPageOrdersForMaker(// 分页获取所有订单号
+        address _fromTokenAddr,// 卖出token地址
+        address _toTokenAddr,// 买入token地址
+        address _maker,
+        uint256 _start,//开始位置
+        uint256 _num//数量
+    )override public view returns(uint256[] memory indexs){
+        address pairAddr=uniswapV2Factory.getPair(_fromTokenAddr, _toTokenAddr);
+        uint256 tokenPairIndex=tokenPairExtIndexMap[pairAddr];
+        indexs=new uint256[](_num);
+        uint256 cl=tokenPairExtArray[tokenPairIndex].ordersForAddress[_maker].length;
+        for(uint256 i=_start;i<cl&&i<_start+_num;i++){
+            indexs[i-_start]=tokenPairExtArray[tokenPairIndex].ordersForAddress[_maker][i];
+        }
     }
     function getOrderInfo(
         address _fromTokenAddr,

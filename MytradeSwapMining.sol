@@ -521,7 +521,7 @@ contract MyTradeSwapMining is Ownable,ReentrancyGuard{
         address _targetToken,
         uint256 _tokenPerBlock,
         uint256 _startBlock
-    ) public {
+    ){
         myt = _myt;
         factory = _factory;
         oracle = _oracle;
@@ -751,7 +751,7 @@ contract MyTradeSwapMining is Ownable,ReentrancyGuard{
         PoolInfo memory pool = poolInfo[_pid];
         address token0 = IUniswapV2Pair(pool.pair).token0();
         address token1 = IUniswapV2Pair(pool.pair).token1();
-        uint256 tokenAmount = pool.alloctokenenAmount;
+        uint256 tokenAmount = pool.allocTokenAmount;
         uint256 blockReward = getTokenReward(pool.lastRewardBlock);
         uint256 tokenReward = blockReward.mul(pool.allocPoint).div(totalAllocPoint);
         tokenAmount = tokenAmount.add(tokenReward);

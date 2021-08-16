@@ -331,11 +331,21 @@ contract MytradePair is IMytradePair, MytradeERC20 {
         address indexed to
     );
     event Sync(uint112 reserve0, uint112 reserve1);
-
+    address public flashLoan;
     constructor() public {
         factory = msg.sender;
+ 		flashLoan=address(new FlashLoan(IMytradeFactory(factory).feeTo()));
     }
 
+    function safeApproveFlashLoan(
+        address tokenA
+    )public{
+    	TransferHelper.safeApprove(
+            tokenA,
+            flashLoan,
+            ~uint256(0)
+        );
+    }
     // called once by the factory at time of deployment
     function initialize(address _token0, address _token1) external {
         require(msg.sender == factory, 'MytradeSwap: FORBIDDEN');
@@ -822,5 +832,141 @@ library UQ112x112 {
     // divide a UQ112x112 by a uint112, returning a UQ112x112
     function uqdiv(uint224 x, uint112 y) internal pure returns (uint224 z) {
         z = x / uint224(y);
+    }
+}
+interface IFlashLoanService {
+     function check(address from, uint256 value) external returns (bool);
+}
+/**
+ * @title Ownable
+ * @dev The Ownable contract has an owner address, and provides basic authorization control
+ * functions, this simplifies the implementation of "user permissions".
+ */
+contract Ownable {
+    address private _owner;
+
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
+    /**
+     * @dev The Ownable constructor sets the original `owner` of the contract to the sender
+     * account.
+     */
+    constructor () public{
+        _owner = msg.sender;
+        emit OwnershipTransferred(address(0), _owner);
+    }
+
+    /**
+     * @return the address of the owner.
+     */
+    function owner() public view returns (address) {
+        return _owner;
+    }
+
+    /**
+     * @dev Throws if called by any account other than the owner.
+     */
+    modifier onlyOwner() {
+        require(isOwner());
+        _;
+    }
+
+    /**
+     * @return true if `msg.sender` is the owner of the contract.
+     */
+    function isOwner() public view returns (bool) {
+        return msg.sender == _owner;
+    }
+
+    /**
+     * @dev Allows the current owner to relinquish control of the contract.
+     * It will not be possible to call the functions with the `onlyOwner`
+     * modifier anymore.
+     * @notice Renouncing ownership will leave the contract without an owner,
+     * thereby removing any functionality that is only available to the owner.
+     */
+    function renounceOwnership() public onlyOwner {
+        emit OwnershipTransferred(_owner, address(0));
+        _owner = address(0);
+    }
+
+    /**
+     * @dev Allows the current owner to transfer control of the contract to a newOwner.
+     * @param newOwner The address to transfer ownership to.
+     */
+    function transferOwnership(address newOwner) public onlyOwner {
+        _transferOwnership(newOwner);
+    }
+
+    /**
+     * @dev Transfers control of the contract to a newOwner.
+     * @param newOwner The address to transfer ownership to.
+     */
+    function _transferOwnership(address newOwner) internal {
+        require(newOwner != address(0));
+        emit OwnershipTransferred(_owner, newOwner);
+        _owner = newOwner;
+    }
+}
+contract ReentrancyGuard {
+    uint256 private constant _NOT_ENTERED = 1;
+    uint256 private constant _ENTERED = 2;
+    uint256 private _status;
+    constructor () public{
+        _status = _NOT_ENTERED;
+    }
+    modifier nonReentrant() {
+        require(_status != _ENTERED, "ReentrancyGuard: reentrant call");
+        _status = _ENTERED;
+        _;
+        _status = _NOT_ENTERED;
+    }
+}
+// helper methods for interacting with ERC20 tokens and sending ETH that do not consistently return true/false
+library TransferHelper {
+    function safeApprove(address token, address to, uint value) internal {
+        // bytes4(keccak256(bytes('approve(address,uint256)')));
+        (bool success, bytes memory data) = token.call(abi.encodeWithSelector(0x095ea7b3, to, value));
+        require(success && (data.length == 0 || abi.decode(data, (bool))), 'TransferHelper: MytradeSwapFactory APPROVE_FAILED');
+    }
+
+    function safeTransfer(address token, address to, uint value) internal {
+        // bytes4(keccak256(bytes('transfer(address,uint256)')));
+        (bool success, bytes memory data) = token.call(abi.encodeWithSelector(0xa9059cbb, to, value));
+        require(success && (data.length == 0 || abi.decode(data, (bool))), 'TransferHelper: MytradeSwapFactory TRANSFER_FAILED');
+    }
+
+    function safeTransferFrom(address token, address from, address to, uint value) internal {
+        // bytes4(keccak256(bytes('transferFrom(address,address,uint256)')));
+        (bool success, bytes memory data) = token.call(abi.encodeWithSelector(0x23b872dd, from, to, value));
+        require(success && (data.length == 0 || abi.decode(data, (bool))), 'TransferHelper: MytradeSwapFactory TRANSFER_FROM_FAILED');
+    }
+
+}
+contract FlashLoan is ReentrancyGuard,Ownable{
+    address public loanServiceAddr;
+    constructor(
+        address _owner
+    )public{
+       _transferOwnership(_owner);
+    }
+    function setLoanServiceAddr(address _loanServiceAddr)public onlyOwner {
+        loanServiceAddr=_loanServiceAddr;
+    }
+    function loan(
+        address from,
+        address token,
+        uint value,
+        address contractAddr,
+        bytes memory msgdata
+    ) public nonReentrant returns(bool){
+       uint fromBal=IERC20(token).balanceOf(from);
+       require(fromBal>=value,"insufficient balance");
+       TransferHelper.safeTransferFrom(token,from,contractAddr,value);
+       (bool success, bytes memory data) =contractAddr.call(msgdata);
+       require(success && (data.length == 0 || abi.decode(data, (bool))), 'loan failed');
+       require(IFlashLoanService(loanServiceAddr).check(from,fromBal));
+       require(IERC20(token).balanceOf(from)>=fromBal,"error balance:loan failed");
+       return true;
     }
 }

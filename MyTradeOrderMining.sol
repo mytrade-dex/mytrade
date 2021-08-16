@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity >=0.6.0 <0.8.0;
+//import "hardhat/console.sol";
 contract Ownable {
     address private _owner;
 
@@ -184,6 +185,30 @@ interface IERC20 {
 contract MyTradeOrderMining is Ownable,ReentrancyGuard{
     using SafeMath for uint;
     IUniswapV2Factory immutable public uniswapV2Factory;
+    // Mapping from owner to operator approvals
+    mapping (address  => mapping (address  => bool)) private _operatorApprovals;
+    address public userRewardToken;
+    address public totalPoolAddr;
+    uint public orderMiningPerBlock;
+    // The block number when mining starts.
+    uint256 public startBlock;
+
+    UserInfo[] public userInfoArray;// UserInfo数组
+    mapping (address  => uint256) public userInfoIndexMap;// maker地址=>userInfoArray数组下标
+
+    struct UserInfo {
+        address maker;
+        uint256 withdrawEndBlock;
+        uint256 addRewardEndBlock;
+        uint256 reward;
+        uint256 rewardSum;
+    }
+
+    event UpdateUserReward(
+        address indexed orderMaker,
+        uint256 addRewardEndBlock,
+        uint256 addReward
+    );
     constructor(
         address _uniswapV2Factory,
         uint _startBlock
@@ -202,8 +227,6 @@ contract MyTradeOrderMining is Ownable,ReentrancyGuard{
         require(isApproved(address(this),addr));//必须经过该地址允许才能操作
         _;
     }
-    // Mapping from owner to operator approvals
-    mapping (address  => mapping (address  => bool)) private _operatorApprovals;
     /**
      *指定允许代理其对合约操作的权限的操作员
      */
@@ -223,68 +246,39 @@ contract MyTradeOrderMining is Ownable,ReentrancyGuard{
         }
         return _operatorApprovals[addr][operator];
     }
-    uint public maxLimitTimes=10;
-   
-    function setMaxLimitTimes(
-        uint _maxLimitTimes
-    ) onlyApproved(msg.sender) public returns(bool) {
-        maxLimitTimes= _maxLimitTimes;
-        return true;
-    }
-    address public userRewardToken;
+
     function setUserRewardToken(
         address _userRewardToken
     ) onlyApproved(msg.sender) public returns(bool) {
         userRewardToken=_userRewardToken;
         return true;
     }
-    address public totalPoolAddr;
     function setTotalPoolAddr(
         address _totalPoolAddr
     ) onlyApproved(msg.sender) public returns(bool) {
         totalPoolAddr=_totalPoolAddr;
         return true;
     }
-    uint public orderMiningPerBlock;
     function setOrderMiningPerBlock(
         uint _orderMiningPerBlock
     ) onlyApproved(msg.sender) public returns(bool) {
         orderMiningPerBlock=_orderMiningPerBlock;
         return true;
     }
-    function updatetUserRewardByOuter() public nonReentrant() returns (bool){
-        return updateUserReward();
+    function updateOrderMiningNumByOuter() public nonReentrant() returns (bool){
+        return updateOrderMiningNum();
     }
-    // The block number when mining starts.
-    uint256 public startBlock;
     function setOrderMiningStartBlock(
         uint _startBlock
     ) onlyApproved(msg.sender) public returns(bool) {
         startBlock=_startBlock;
         return true;
     }
-    struct TokenPairMining{
-        mapping(uint256=> uint256) blockNums;// orderIndex=》blocknum
-    }
-    uint256 public poolSumQuantity;
-    uint256 public poolQuantity;
-    struct UserInfo {
-        address maker;
-        uint256 reward;
-        uint256 sumQuantity;
-        uint256 quantity;
-        uint256 blockNumber;
-    }
-    UserInfo[] public userInfoArray;// UserInfo数组
-    mapping (address  => uint256) public userInfoIndexMap;// maker地址=>userInfoArray数组下标
-    uint256[] public settlements;
-    event UpdateUserQuantity(
-        address indexed orderMaker,
-        uint256 quantity
-    );
-    function updatetUserQuantity(
+    function updateUserReward(
         address _orderMaker,
-        uint256 _quantity
+        uint256 _addRewardOldEndBlock,
+        uint256 _addRewardCurEndBlock,
+        uint256 _addReward
     ) public onlyApproved(msg.sender) returns (bool){
         uint256 userInfoIndex=userInfoIndexMap[_orderMaker];
         if(userInfoIndex== 0){//如果交易对不存在就新增一个
@@ -292,18 +286,17 @@ contract MyTradeOrderMining is Ownable,ReentrancyGuard{
             userInfoIndex=userInfoArray.length-1 ;
             userInfoIndexMap[_orderMaker]=userInfoIndex;
             userInfoArray[userInfoIndex].maker=_orderMaker;
-            userInfoArray[userInfoIndex].blockNumber=block.number;
         }
-        if(userInfoArray[userInfoIndex].quantity==0){
-            settlements.push();
-            settlements[settlements.length-1]=userInfoIndex;
-        }
-        userInfoArray[userInfoIndex].quantity=userInfoArray[userInfoIndex].quantity.add(_quantity);
-        emit UpdateUserQuantity(_orderMaker,_quantity);
+        //防止重复
+        require(_addRewardOldEndBlock==userInfoArray[userInfoIndex].addRewardEndBlock,"data error");
+        userInfoArray[userInfoIndex].reward=userInfoArray[userInfoIndex].reward.add(_addReward);
+        userInfoArray[userInfoIndex].rewardSum=userInfoArray[userInfoIndex].rewardSum.add(_addReward);
+        userInfoArray[userInfoIndex].addRewardEndBlock=_addRewardCurEndBlock;
+        emit UpdateUserReward(_orderMaker,_addRewardCurEndBlock,_addReward);
         return true;
     }
     
-    function updateUserReward() public returns (bool){
+    function updateOrderMiningNum() public returns (bool){
         if(block.number > startBlock){
             uint256 reward=block.number.sub(startBlock).mul(orderMiningPerBlock);
             startBlock=block.number;
@@ -314,31 +307,14 @@ contract MyTradeOrderMining is Ownable,ReentrancyGuard{
                 reward
             );
         }
-        for(uint i=0;i<maxLimitTimes;i++){
-            if(settlements.length==0){
-                break;
-            }
-            _updateReward(settlements[settlements.length-1]);
-            delete settlements[settlements.length-1];
-            settlements.pop();
-        }
         return true;
     }
     
-    function _updateReward(uint userInfoIndex) internal {
-        uint _quantity=userInfoArray[userInfoIndex].quantity;
-        userInfoArray[userInfoIndex].sumQuantity=userInfoArray[userInfoIndex].sumQuantity.add(_quantity);
-        poolSumQuantity=poolSumQuantity.add(_quantity);
-        poolQuantity=poolQuantity.add(_quantity);
-        userInfoArray[userInfoIndex].reward=userInfoArray[userInfoIndex].reward.add(
-            IERC20(userRewardToken).balanceOf(address(this)).mul(_quantity).div(poolQuantity)
-        );
-        userInfoArray[userInfoIndex].quantity=0;
-    }
+
     function withdrawUserReward() public nonReentrant returns (bool){
         uint256 userInfoIndex=userInfoIndexMap[msg.sender];
         require(userInfoIndex!= 0);
-        require(updateUserReward());
+        require(updateOrderMiningNum());
         require(userInfoArray[userInfoIndex].reward>0);
         TransferHelper.safeTransfer(
             userRewardToken,
@@ -346,6 +322,7 @@ contract MyTradeOrderMining is Ownable,ReentrancyGuard{
             userInfoArray[userInfoIndex].reward
         );
         userInfoArray[userInfoIndex].reward=0;
+        userInfoArray[userInfoIndex].withdrawEndBlock=userInfoArray[userInfoIndex].addRewardEndBlock;
         return true;
     }
 }

@@ -70,16 +70,8 @@ library SafeMath {
  */
 interface IERC20 {
     function transfer(address to, uint256 value) external returns (bool);
-
-    function approve(address spender, uint256 value) external returns (bool);
-
     function transferFrom(address from, address to, uint256 value) external returns (bool);
-
-    function totalSupply() external view returns (uint256);
-
     function balanceOf(address who) external view returns (uint256);
-
-    function allowance(address owner, address spender) external view returns (uint256);
 
 }
 interface IUniswapV2Factory {
@@ -183,7 +175,6 @@ interface IWETH {
 }
 // helper methods for interacting with ERC20 tokens and sending ETH that do not consistently return true/false
 library TransferHelper {
-    using SafeMath for uint;
     function safeApprove(address token, address to, uint value) internal {
         // bytes4(keccak256(bytes('approve(address,uint256)')));
         (bool success, bytes memory data) = token.call(abi.encodeWithSelector(0x095ea7b3, to, value));
@@ -191,18 +182,14 @@ library TransferHelper {
     }
 
     function safeTransfer(address token, address to, uint value) internal {
-        uint startbal=IERC20(token).balanceOf(address(this));
         // bytes4(keccak256(bytes('transfer(address,uint256)')));
         (bool success, bytes memory data) = token.call(abi.encodeWithSelector(0xa9059cbb, to, value));
-        require(IERC20(token).balanceOf(address(this))>=startbal.sub(value),"TransferHelper: MyTradeOrderBook TRANSFER_FAILED,BalanceOf Fail");
         require(success && (data.length == 0 || abi.decode(data, (bool))), 'TransferHelper: MyTradeOrderBook TRANSFER_FAILED');
     }
 
     function safeTransferFrom(address token, address from, address to, uint value) internal {
-        uint startbal=IERC20(token).balanceOf(address(this));
         // bytes4(keccak256(bytes('transferFrom(address,address,uint256)')));
         (bool success, bytes memory data) = token.call(abi.encodeWithSelector(0x23b872dd, from, to, value));
-        require(IERC20(token).balanceOf(address(this))>=startbal.add(value),"TransferHelper: MyTradeOrderBook TRANSFER_FROM_FAILED,BalanceOf Fail");
         require(success && (data.length == 0 || abi.decode(data, (bool))), 'TransferHelper: MyTradeOrderBook TRANSFER_FROM_FAILED');
     }
 
@@ -239,18 +226,29 @@ interface IMyTradeOrderBookExt{
         address _fromTokenAddr,
         address _toTokenAddr,
         uint256 _orderIndex,
-        uint256 _toTokenNum
+        uint256 _outNum,
+        uint256 _inNum
     )external;
     function getOrderIndexsForMaker(
         address _fromTokenAddr,
         address _toTokenAddr,
         address _maker
     )external view returns(uint256[] memory cindexs);
+    function getPageOrdersForMaker(// 分页获取所有订单号
+        address _fromTokenAddr,// 卖出token地址
+        address _toTokenAddr,// 买入token地址
+        address _maker,
+        uint256 _start,//开始位置
+        uint256 _num//数量
+    )external view returns(uint256[] memory indexs);
     function getOrderInfo(
         address _fromTokenAddr,
         address _toTokenAddr,
         uint256 _orderIndex
    )external view returns(uint256 _orderTime,uint256 _toTokenSum);
+}
+interface IMyTradeOrderMining{
+    function updateOrderMiningNumByOuter() external returns (bool);
 }
 interface ISwapMining {
     function swap(address account, address input, address output, uint256 amount) external returns (bool);
@@ -314,13 +312,18 @@ library OrderBookHelper{
     }
 }
 contract MyTradeOrderBook is Ownable,ReentrancyGuard{
+    
     using SafeMath for uint;
     IUniswapV2Factory immutable public uniswapV2Factory;
     address immutable public WETH;
     address public feeAddr;
     uint256 constant UINT256_MAX = ~uint256(0);
-    IMyTradeOrderBookExt myTradeOrderBookExt;
+    IMyTradeOrderBookExt public myTradeOrderBookExt;
+    address public myTradeOrderMining;
     address public swapMining;
+    function setMyTradeOrderMining(address _myTradeOrderMining) public onlyOwner {
+        myTradeOrderMining = _myTradeOrderMining;
+    }
     function setSwapMining(address _swapMininng) public onlyOwner {
         swapMining = _swapMininng;
     }
@@ -352,7 +355,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         return _operatorApprovals[addr][operator];
     }
     //最小数量限额：0.1,可外部设置
-    mapping (address  => uint)  minLimitMap;
+    mapping (address  => uint) public minLimitMap;
     /**
      *设置最小允许的数
      */
@@ -383,8 +386,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
     mapping (address  => uint256) tokenPairIndexMap;// tokenPairAddr=>tokenPair数组下标
     mapping (uint  => mapping (address  => uint)) minLimitMapForPair;//最小下单数量, tokenPairIndex=>map
 
-    mapping (uint256  => mapping (uint256  => uint8)) cancelMap;//是否是已取消订单
-    
+    address immutable flashLoan;
     constructor(
         address _WETH,
         address _uniswapV2Factory
@@ -393,6 +395,16 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         feeAddr=msg.sender;
         tokenPairArray.push();
         uniswapV2Factory=IUniswapV2Factory(_uniswapV2Factory);
+        flashLoan=address(new FlashLoan(msg.sender));
+    }
+    function safeApproveFlashLoan(
+        address tokenA
+    )public{
+    	TransferHelper.safeApprove(
+            tokenA,
+            flashLoan,
+            UINT256_MAX
+        );
     }
     function setMyTradeOrderBookExtAddr(
         address _myTradeOrderBookExtAddr
@@ -409,7 +421,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         feeAddr=_feeAddr;
     }
     mapping (address  => uint256) allUserDiposit;//所有用户存款代币数量
-    mapping (address  => mapping (address  => uint256))  userDiposit;
+    mapping (address  => mapping (address  => uint256)) public userDiposit;
     function deposit(address _token,uint _num) public {
         TransferHelper.safeTransferFrom(
             _token,
@@ -442,6 +454,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         require(_fromTokenNumber>=minLimitMap[_fromTokenAddr],"min limit");
         userDiposit[msg.sender][_fromTokenAddr] = userDiposit[msg.sender][_fromTokenAddr].sub(_fromTokenNumber);
         (reserveNum,orderIndex)=_addOrder(
+            msg.sender,
             _fromTokenAddr,
             _toTokenAddr,
             _targetOrderIndex,
@@ -467,10 +480,21 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
     )public nonReentrant returns(bool) {
         _cancelOrderForNum(_fromTokenAddr,_toTokenAddr,_orderIndex,_num);
         allUserDiposit[_fromTokenAddr]=allUserDiposit[_fromTokenAddr].sub(_num);
-        if(isForEth[_orderIndex]>0){
-           withdraw(WETH,_num);
+        if(_fromTokenAddr==WETH){
+           IWETH(WETH).withdraw(_num);
+           TransferHelper.safeTransferETH(
+              msg.sender,
+              _num
+           );
         }else{
-           withdraw(_fromTokenAddr,_num);
+           TransferHelper.safeTransfer(
+                _fromTokenAddr,
+                msg.sender,
+                _num
+            );
+        }
+        if(myTradeOrderMining!=address(0)){
+            IMyTradeOrderMining(myTradeOrderMining).updateOrderMiningNumByOuter();
         }
         return true;
     }
@@ -489,7 +513,6 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         uint256 remainNumber=_tokenPair.orderMap[_orderIndex].remainNumber;
         require(remainNumber>=_num);
         if(remainNumber==_num){
-            cancelMap[tokenPairIndex][_orderIndex]=1;//已取消
             if(_tokenPair.lastIndex[_fromTokenAddr]==_orderIndex){
                 _tokenPair.lastIndex[_fromTokenAddr]=_tokenPair.orderNextSequence[_orderIndex];
                 _tokenPair.orderPreSequence[_tokenPair.lastIndex[_fromTokenAddr]]=0;
@@ -560,16 +583,28 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
     }
  
     mapping (uint  => uint8) isForEth;
-    function addOrderWithForETH(
+    
+    function addOrderWithETH(
+        address _maker,
+        address _toTokenAddr,
+        uint256 _targetOrderIndex,
+        uint256 _toTokenNumber
+    )public payable nonReentrant returns(uint256 reserveNum,uint256 orderIndex) {
+        require(msg.value>=minLimitMap[WETH],"min limit");
+        (reserveNum,orderIndex)=addOrder(_maker,WETH,_toTokenAddr,_targetOrderIndex,msg.value,_toTokenNumber);
+    }
+    function addOrderForETH(
+        address _maker,
         address _fromTokenAddr,
         uint256 _targetOrderIndex,
         uint256 _fromTokenNumber,
         uint256 _toTokenNumber
     )public payable nonReentrant returns(uint256 reserveNum,uint256 orderIndex) {
-        (reserveNum,orderIndex)=addOrder(_fromTokenAddr,WETH,_targetOrderIndex,_fromTokenNumber,_toTokenNumber);
+        (reserveNum,orderIndex)=addOrder(_maker,_fromTokenAddr,WETH,_targetOrderIndex,_fromTokenNumber,_toTokenNumber);
         isForEth[orderIndex]=1;
     }
     function addOrder(
+        address _maker,
         address _fromTokenAddr,
         address _toTokenAddr,
         uint256 _targetOrderIndex,
@@ -583,9 +618,10 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
             address(this),
             _fromTokenNumber
         );
-        (reserveNum,orderIndex)=_addOrder(_fromTokenAddr,_toTokenAddr,_targetOrderIndex,_fromTokenNumber,_toTokenNumber);
+        (reserveNum,orderIndex)=_addOrder(_maker,_fromTokenAddr,_toTokenAddr,_targetOrderIndex,_fromTokenNumber,_toTokenNumber);
     }
     function _addOrder(
+        address _maker,
         address _fromTokenAddr,
         address _toTokenAddr,
         uint256 _targetOrderIndex,
@@ -623,13 +659,13 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
             );
         }
         myTradeOrderBookExt.addOrder(
-            msg.sender,
+            _maker,
             _fromTokenAddr,
             _toTokenAddr,
             _fromTokenNumber,
             _toTokenNumber,
             orderIndex);
-        Order memory order=Order(msg.sender,_fromTokenAddr,_toTokenAddr,
+        Order memory order=Order(_maker,_fromTokenAddr,_toTokenAddr,
            _fromTokenNumber,_fromTokenNumber,_toTokenNumber);
         _tokenPair.orderMap[orderIndex]=order;
         (uint256 reserveA,uint256 reserveB)=getReserves(order.fromTokenAddr, order.toTokenAddr);
@@ -655,6 +691,9 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                 feeAddr,
                 remainBal.sub(allUserDiposit[order.fromTokenAddr])
             );
+        }
+        if(myTradeOrderMining!=address(0)){
+            IMyTradeOrderMining(myTradeOrderMining).updateOrderMiningNumByOuter();
         }
     }
     function checkTrade(TokenPair storage _tokenPair,uint256 orderIndex,Order memory o,uint256 reserveA,uint256 reserveB) internal {
@@ -682,7 +721,6 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                                     uint tonum=getToNum(bo);
                                     uint[2] memory tonums=[tonum,tonum.mul(997).div(1000)];//为了解决变量过多导致栈过深问题
                                     if(tokenANum>=tonums[0]){//如果全部成交也不够
-                                        allUserDiposit[bo.toTokenAddr]=allUserDiposit[bo.toTokenAddr].sub(tonums[1]);
                                         if(isForEth[numArray[2]]>0){
                                             IWETH(WETH).withdraw(tonums[1]);
                                             TransferHelper.safeTransferETH(
@@ -709,7 +747,8 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                                             bo.fromTokenAddr,
                                             bo.toTokenAddr,
                                             numArray[2],
-                                            tonums[1]//成交数量
+                                            tonums[1],//成交数量
+                                            bo.remainNumber
                                         );
                                         _tokenPair.orderMap[numArray[2]].remainNumber=0;
                                         numArray[2]=newBIndex;
@@ -729,7 +768,6 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                                         }
                                     }else{//如果最后一条订单簿能成交够,部分成交订单簿
                                         uint256 atoNum=tokenANum.mul(997).div(1000);
-                                        allUserDiposit[bo.toTokenAddr]=allUserDiposit[bo.toTokenAddr].sub(atoNum);
                                         if(isForEth[numArray[2]]>0){
                                             IWETH(WETH).withdraw(atoNum);
                                             TransferHelper.safeTransferETH(
@@ -752,7 +790,8 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                                             bo.fromTokenAddr,
                                             bo.toTokenAddr,
                                             numArray[2],
-                                            atoNum//成交数量
+                                            atoNum,//成交数量
+                                            tokenBNum
                                         );
                                         tokenANum=0;//停止向上遍列
                                     }
@@ -789,12 +828,12 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                                     );
                                 }
                                 numArray[1]=numArray[1].add(amountOut);
+                                allUserDiposit[o.toTokenAddr]=allUserDiposit[o.toTokenAddr].add(amountOut);
                             }
                         }
                     }
                     if(numArray[0]>0){
                         if(numArray[1]>0){
-                            allUserDiposit[o.toTokenAddr]=allUserDiposit[o.toTokenAddr].sub(numArray[1]);
                             if(isForEth[orderIndex]>0){
                                 IWETH(WETH).withdraw(numArray[1]);
                                 TransferHelper.safeTransferETH(
@@ -809,15 +848,17 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                                 );
                             }
                             if (swapMining != address(0)) {
-                                ISwapMining(swapMining).swap(msg.sender, o.fromTokenAddr, o.toTokenAddr, numArray[1]);
+                                ISwapMining(swapMining).swap(o.maker, o.fromTokenAddr, o.toTokenAddr, numArray[1]);
                             }
-                            myTradeOrderBookExt.updateOrderInfo(
-                                _tokenPair.orderMap[orderIndex].fromTokenAddr,
-                                _tokenPair.orderMap[orderIndex].toTokenAddr,
-                                orderIndex,
-                                numArray[1]//成交数量
-                            );
+                            allUserDiposit[o.toTokenAddr]=allUserDiposit[o.toTokenAddr].sub(numArray[1]);
                         }
+                        myTradeOrderBookExt.updateOrderInfo(
+                            _tokenPair.orderMap[orderIndex].fromTokenAddr,
+                            _tokenPair.orderMap[orderIndex].toTokenAddr,
+                            orderIndex,
+                            numArray[1],//成交数量
+                            numArray[0]
+                        );
                         _tokenPair.orderMap[orderIndex].remainNumber=
                             o.fromTokenNumber.sub(numArray[0]);
                         
@@ -834,7 +875,6 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                         uint256 toNum=getToNum(bo);
                         if(tokenANum>=toNum){
                             uint256 atoNum=toNum.mul(997).div(1000);
-                            allUserDiposit[bo.toTokenAddr]=allUserDiposit[bo.toTokenAddr].sub(atoNum);
                             if(isForEth[numArray[2]]>0){
                                 IWETH(WETH).withdraw(atoNum);
                                 TransferHelper.safeTransferETH(
@@ -860,13 +900,13 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                                 _tokenPair.orderMap[numArray[2]].fromTokenAddr,
                                 _tokenPair.orderMap[numArray[2]].toTokenAddr,
                                 numArray[2],
-                                atoNum//成交数量
+                                atoNum,//成交数量
+                                bo.remainNumber
                             );
                             _tokenPair.orderMap[numArray[2]].remainNumber=0;
                             numArray[2]=newBIndex;
                         }else{
                             uint256 atoNum=tokenANum.mul(997).div(1000);
-                            allUserDiposit[bo.toTokenAddr]=allUserDiposit[bo.toTokenAddr].sub(atoNum);
                             if(isForEth[numArray[2]]>0){
                                 IWETH(WETH).withdraw(atoNum);
                                 TransferHelper.safeTransferETH(
@@ -890,7 +930,8 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                                 _tokenPair.orderMap[numArray[2]].fromTokenAddr,
                                 _tokenPair.orderMap[numArray[2]].toTokenAddr,
                                 numArray[2],
-                                atoNum//成交数量
+                                atoNum,//成交数量
+                                tokenBNum
                             );
                             break;
                         }
@@ -914,13 +955,15 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                     }
                     
                     if (swapMining != address(0)) {
-                        ISwapMining(swapMining).swap(msg.sender, o.fromTokenAddr, o.toTokenAddr, numArray[1]);
+                        ISwapMining(swapMining).swap(o.maker, o.fromTokenAddr, o.toTokenAddr, numArray[1]);
                     }
+                    allUserDiposit[o.toTokenAddr]=allUserDiposit[o.toTokenAddr].sub(numArray[1]);
                     myTradeOrderBookExt.updateOrderInfo(
                         _tokenPair.orderMap[orderIndex].fromTokenAddr,
                         _tokenPair.orderMap[orderIndex].toTokenAddr,
                        orderIndex,
-                        numArray[1]//成交数量
+                        numArray[1],//成交数量
+                        numArray[0]
                     );    
                         
                     _tokenPair.orderMap[orderIndex].remainNumber=
@@ -934,66 +977,16 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         address _fromTokenAddr,// 卖出token地址
         address _toTokenAddr,// 买入token地址
         address _maker,
-        uint256 _type,//1:代表所有;2:代表已取消;3:代表已成交;4:代表未成交;5:代表已取消或者已成交
         uint256 _start,//开始位置
         uint256 _num//数量
     )public view returns(uint256[] memory indexs){
-        address pairAddr =uniswapV2Factory.getPair(_fromTokenAddr, _toTokenAddr);
-        if(pairAddr!=address(0)){
-            uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
-            if(tokenPairIndex!=0){
-                indexs=new uint256[](0);
-                uint256[] memory cindexs=myTradeOrderBookExt.getOrderIndexsForMaker(_fromTokenAddr,_toTokenAddr,_maker);
-                uint256 cl=cindexs.length;
-                uint256 i=_start;
-                uint256 ll=0;
-                while(i<cl){
-                    if(_type==2){
-                        if(!_IsCancelOrderIndex(cindexs[i],tokenPairIndex)){
-                            i=i.add(1);
-                            continue;
-                        }
-                        indexs=OrderBookHelper.joinNumber(cindexs[i],indexs);
-                    }
-                    if(_type==3){
-                        if(!_IsTradeCompleteOrderIndex(cindexs[i],tokenPairIndex)){
-                            i=i.add(1);
-                            continue;
-                        }
-                    }
-                    if(_type==4){
-                        if(!_IsTradeNotCompleteOrderIndex(cindexs[i],tokenPairIndex)){
-                            i=i.add(1);
-                            continue;
-                        }
-                    }
-                    if(_type==5){
-                        if(!(_IsTradeCompleteOrderIndex(cindexs[i],tokenPairIndex)||
-                        _IsCancelOrderIndex(cindexs[i],tokenPairIndex))){
-                            i=i.add(1);
-                            continue;
-                        }
-                    }
-                    indexs=OrderBookHelper.
-                    joinNumber(cindexs[i],indexs);
-                    if(ll==indexs.length){//新数组长度没变停止
-                        break;
-                    }
-                    ll=indexs.length;//更新新数组长度
-                    if(ll==_num){
-                        break;
-                    }
-                    i=i.add(1);
-                }
-            }
-        }
+        return getPageOrdersForMaker(_fromTokenAddr,_toTokenAddr,_maker,_start,_num);
     }
 
     function getPageOrderDetailsForMaker(// 分页获取所有订单号
         address _fromTokenAddr,// 卖出token地址
         address _toTokenAddr,// 买入token地址
         address _maker,
-        uint256 _type,//1:代表所有;2:代表已取消;3:代表已成交;4:代表未成交;5:代表已取消或者已成交
         uint256 _start,//开始位置
         uint256 _num//数量
     )public view returns(
@@ -1008,7 +1001,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         if(pairAddr!=address(0)){
             if(tokenPairIndexMap[pairAddr]!=0){
                 TokenPair storage tokenPair=tokenPairArray[tokenPairIndexMap[pairAddr]];
-                uint256[] memory _orderIndexs=getPageOrdersForMaker(_fromTokenAddr,_toTokenAddr,_maker,_type,_start,_num);
+                uint256[] memory _orderIndexs=getPageOrdersForMaker(_fromTokenAddr,_toTokenAddr,_maker,_start,_num);
                 uint256 l=_orderIndexs.length;
                 fromTokenAddrs=new address[](l);
                 fromTokenNumbers=new uint256[](l);
@@ -1245,7 +1238,6 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
             bo.remainNumber
         ).div(bo.fromTokenNumber).mul(1000).div(997);
     }
-    
    
     // fetches and sorts the reserves for a pair
     function getReserves(address tokenA, address tokenB) internal view returns (uint reserveA, uint reserveB) {
@@ -1254,29 +1246,35 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         (reserveA, reserveB) = tokenA == token0 ? (reserve0, reserve1) : (reserve1, reserve0);
     }
 
-    function _IsCancelOrderIndex(
-        uint256 _orderIndex,
-        uint256 _tokenPairIndex
-    )internal view returns (bool){
-        return cancelMap[_tokenPairIndex][_orderIndex]==1;
+}
+interface IFlashLoanService {
+     function check(address from, uint256 value) external returns (bool);
+}
+
+contract FlashLoan is ReentrancyGuard,Ownable{
+    address public loanServiceAddr;
+    constructor(
+        address _owner
+    ){
+       _transferOwnership(_owner);
     }
-    function _IsTradeCompleteOrderIndex(
-        uint256 _orderIndex,
-        uint256 _tokenPairIndex
-    )internal view returns (bool){
-        bool b=!_IsCancelOrderIndex(_orderIndex,_tokenPairIndex);
-        return b&&_orderIndex!=tokenPairArray[_tokenPairIndex].lastIndex[tokenPairArray[_tokenPairIndex].orderMap[_orderIndex].fromTokenAddr]
-        &&(tokenPairArray[_tokenPairIndex].orderNextSequence[_orderIndex]==0&&
-        tokenPairArray[_tokenPairIndex].orderPreSequence[_orderIndex]==0);
+    function setLoanServiceAddr(address _loanServiceAddr)public onlyOwner {
+        loanServiceAddr=_loanServiceAddr;
     }
-    function _IsTradeNotCompleteOrderIndex(
-        uint256 _orderIndex,
-        uint256 _tokenPairIndex
-    )internal view returns (bool){
-        return
-        _orderIndex==tokenPairArray[_tokenPairIndex].lastIndex[tokenPairArray[_tokenPairIndex].orderMap[_orderIndex].fromTokenAddr]||
-        tokenPairArray[_tokenPairIndex].orderNextSequence[_orderIndex]!=0||
-        tokenPairArray[_tokenPairIndex].orderPreSequence[_orderIndex]!=0;
+    function loan(
+        address from,
+        address token,
+        uint value,
+        address contractAddr,
+        bytes memory msgdata
+    ) public nonReentrant returns(bool){
+       uint fromBal=IERC20(token).balanceOf(from);
+       require(fromBal>=value,"insufficient balance");
+       TransferHelper.safeTransferFrom(token,from,contractAddr,value);
+       (bool success, bytes memory data) =contractAddr.call(msgdata);
+       require(success && (data.length == 0 || abi.decode(data, (bool))), 'loan failed');
+       require(IFlashLoanService(loanServiceAddr).check(from,fromBal));
+       require(IERC20(token).balanceOf(from)>=fromBal,"error balance:loan failed");
+       return true;
     }
-    
 }
