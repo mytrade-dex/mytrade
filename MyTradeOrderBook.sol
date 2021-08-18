@@ -589,7 +589,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         address _toTokenAddr,
         uint256 _targetOrderIndex,
         uint256 _toTokenNumber
-    )public payable nonReentrant returns(uint256 reserveNum,uint256 orderIndex) {
+    )public payable returns(uint256 reserveNum,uint256 orderIndex) {
         require(msg.value>=minLimitMap[WETH],"min limit");
         (reserveNum,orderIndex)=addOrder(_maker,WETH,_toTokenAddr,_targetOrderIndex,msg.value,_toTokenNumber);
     }
@@ -599,7 +599,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         uint256 _targetOrderIndex,
         uint256 _fromTokenNumber,
         uint256 _toTokenNumber
-    )public payable nonReentrant returns(uint256 reserveNum,uint256 orderIndex) {
+    )public payable returns(uint256 reserveNum,uint256 orderIndex) {
         (reserveNum,orderIndex)=addOrder(_maker,_fromTokenAddr,WETH,_targetOrderIndex,_fromTokenNumber,_toTokenNumber);
         isForEth[orderIndex]=1;
     }
