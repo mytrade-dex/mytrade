@@ -317,17 +317,21 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
     address immutable public WETH;
     address public feeAddr;
     uint256 constant UINT256_MAX = ~uint256(0);
-    IMyTradeOrderBookExt public myTradeOrderBookExt;
+    IMyTradeOrderBookExt myTradeOrderBookExt;
     address public myTradeOrderMining;
     address public swapMining;
     function setMyTradeOrderMining(address _myTradeOrderMining) public onlyOwner {
         myTradeOrderMining = _myTradeOrderMining;
     }
+    address public forPreDiposit;
+     function setForPreDiposit(address _forPreDiposit) public onlyOwner {
+        forPreDiposit = _forPreDiposit;
+    }
     function setSwapMining(address _swapMininng) public onlyOwner {
         swapMining = _swapMininng;
     }
     //最小数量限额：0.1,可外部设置
-    mapping (address  => uint) public minLimitMap;
+    mapping (address  => uint) minLimitMap;
     /**
      *设置最小允许的数
      */
@@ -356,7 +360,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
     }
     TokenPair[] tokenPairArray;// tokenPair数组
     mapping (address  => uint256) tokenPairIndexMap;// tokenPairAddr=>tokenPair数组下标
-    mapping (uint  => mapping (address  => uint)) public minLimitMapForPair;//最小下单数量, tokenPairIndex=>map
+   
 
     address immutable public flashLoan;
     constructor(
@@ -422,6 +426,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         uint256 _fromTokenNumber,
         uint256 _toTokenNumber
     )public nonReentrant returns(uint256 reserveNum,uint256 orderIndex) {
+        require(msg.sender==forPreDiposit);
         require(userDiposit[msg.sender][_fromTokenAddr]>=_fromTokenNumber,"Insufficient Balance");
         require(_fromTokenNumber>=minLimitMap[_fromTokenAddr],"min limit");
         userDiposit[msg.sender][_fromTokenAddr] = userDiposit[msg.sender][_fromTokenAddr].sub(_fromTokenNumber);
