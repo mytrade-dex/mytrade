@@ -690,11 +690,9 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
             if(cInAmount>o.fromTokenNumber){
                 cInAmount=o.fromTokenNumber;
             }
-            uint amountInSum=0;
-            uint amountOutSum=0;
-            uint toListIndex=_tokenPair.lastIndex[o.toTokenAddr];
-            if(toListIndex!=0){//如果存在挂单
-                Order storage bom=_tokenPair.orderMap[toListIndex];
+            uint[3] memory numArray=[0,0,_tokenPair.lastIndex[o.toTokenAddr]];
+            if(numArray[2]!=0){//如果存在挂单
+                Order storage bom=_tokenPair.orderMap[numArray[2]];
                 Order memory bo=bom;
                 if(o.fromTokenNumber.mul(bo.fromTokenNumber)>=o.toTokenNumber.mul(bo.toTokenNumber)){//当前订单价格超过挂单的价格
                     uint256 newInAmount;
@@ -706,11 +704,11 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                     }
                     if(cInAmount>=newInAmount){//全部成交超过对手订单价格
                         uint256 tokenANum=o.fromTokenNumber.sub(newInAmount);
-                        while(toListIndex>0&&tokenANum>0){
+                        while(numArray[2]>0&&tokenANum>0){
                             uint tonum=getToNum(bo);
                             uint tonumsFee=tonum.mul(997).div(1000);
                             if(tokenANum>=tonum){//如果全部成交也不够
-                                if(isForEth[toListIndex]>0){
+                                if(isForEth[numArray[2]]>0){
                                     IWETH(WETH).withdraw(tonumsFee);
                                     TransferHelper.safeTransferETH(
                                       bo.maker,
@@ -723,31 +721,29 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                                         tonumsFee
                                     );
                                 }
-                                amountInSum=amountInSum.add(tonum);//付出的
-                                amountOutSum=amountOutSum.add(bo.remainNumber);//得到的 
+                                numArray[0]=numArray[0].add(tonum);//付出的
+                                numArray[1]=numArray[1].add(bo.remainNumber);//得到的 
                                 bom.remainNumber=0;
                                 myTradeOrderBookExt.updateOrderInfo(
                                     bo.fromTokenAddr,
                                     bo.toTokenAddr,
-                                    toListIndex,
+                                    numArray[2],
                                     tonumsFee,//成交数量
                                     bo.remainNumber
                                 );
-                                {
-                                    uint newToListIndex=_tokenPair.orderNextSequence[toListIndex];//继续向上一单推进
-                                    toListIndex=newToListIndex;
-                                }
-    	                        _tokenPair.orderNextSequence[toListIndex]=0;
-    	                        _tokenPair.lastIndex[o.toTokenAddr]=toListIndex;
-                                if(toListIndex!=0){
-	                                _tokenPair.orderPreSequence[toListIndex]=0;
-                                    bom=_tokenPair.orderMap[toListIndex];
+                                uint newBIndex=_tokenPair.orderNextSequence[numArray[2]];//继续向上一单推进
+	                            _tokenPair.orderNextSequence[numArray[2]]=0;
+                                numArray[2]=newBIndex;
+    	                        _tokenPair.lastIndex[o.toTokenAddr]=numArray[2];
+                                if(numArray[2]!=0){
+	                                _tokenPair.orderPreSequence[numArray[2]]=0;
+                                    bom=_tokenPair.orderMap[numArray[2]];
                                     bo=bom;
                                     if(o.fromTokenNumber.mul(bo.fromTokenNumber)>o.toTokenNumber.mul(bo.toTokenNumber)){
                                         newInAmount=OrderBookHelper.getInAmount(
                                         bo.toTokenNumber,bo.fromTokenNumber,reserveA,reserveB);//计算对手订单价格需要付出的币数量
                                     }
-                                    uint atemp=newInAmount.add(amountInSum);
+                                    uint atemp=newInAmount.add(numArray[0]);
                                     if(cInAmount>=newInAmount&&o.fromTokenNumber>atemp){//继续向上一条订单价格推进
                                         tokenANum=o.fromTokenNumber.sub(atemp);
                                     }else{
@@ -757,7 +753,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                             }else{
                                 //如果最后一条订单簿能成交够,部分成交订单簿
                                 uint256 atoNum=tokenANum.mul(997).div(1000);
-                                if(isForEth[toListIndex]>0){
+                                if(isForEth[numArray[2]]>0){
                                     IWETH(WETH).withdraw(atoNum);
                                     TransferHelper.safeTransferETH(
                                         bo.maker,
@@ -770,14 +766,14 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                                         atoNum
                                     );
                                 }
-                                amountInSum=amountInSum.add(tokenANum);
+                                numArray[0]=numArray[0].add(tokenANum);
                                 uint256 tokenBNum=atoNum.mul(bo.fromTokenNumber) / bo.toTokenNumber;
-                                amountOutSum=amountOutSum.add(tokenBNum);
+                                numArray[1]=numArray[1].add(tokenBNum);
                                 bom.remainNumber=bo.remainNumber.sub(tokenBNum);
                                 myTradeOrderBookExt.updateOrderInfo(
                                     bo.fromTokenAddr,
                                     bo.toTokenAddr,
-                                    toListIndex,
+                                    numArray[2],
                                     atoNum,//成交数量
                                     tokenBNum
                                 );
@@ -787,12 +783,12 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                     }
                 }
             }
-            uint256 inAmountToliq=o.fromTokenNumber.sub(amountInSum);
+            uint256 inAmountToliq=o.fromTokenNumber.sub(numArray[0]);
             if(cInAmount<inAmountToliq){
                 inAmountToliq=cInAmount;
             }
             if(inAmountToliq>0){
-                amountInSum=amountInSum.add(inAmountToliq);
+                numArray[0]=numArray[0].add(inAmountToliq);
                 {
                     address _fromTokenAddr=o.fromTokenAddr;
                     address _toTokenAddr=o.toTokenAddr;
@@ -803,7 +799,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                     uint256 amountIn = (numerator / denominator).add(2);
                     if(inAmountToliq>=amountIn){
                         uint256 amountOut=OrderBookHelper.getAmountOut(inAmountToliq,_reserveA,_reserveB);
-                        amountOutSum=amountOutSum.add(amountOut);
+                        numArray[1]=numArray[1].add(amountOut);
                         address pairAddr=uniswapV2Factory.getPair(_fromTokenAddr, _toTokenAddr);
                         TransferHelper.safeTransfer(
                             _fromTokenAddr,
@@ -824,51 +820,48 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                     }
                 }
             }
-            if(amountInSum>0){
-                if(amountOutSum>0){
+            if(numArray[0]>0){
+                if(numArray[1]>0){
                     if(isForEth[orderIndex]>0){
-                        IWETH(WETH).withdraw(amountOutSum);
+                        IWETH(WETH).withdraw(numArray[1]);
                         TransferHelper.safeTransferETH(
                             o.maker,
-                            amountOutSum
+                            numArray[1]
                         );
                     }else{
                         TransferHelper.safeTransfer(
                             o.toTokenAddr,
                             o.maker,
-                            amountOutSum
+                            numArray[1]
                         );
                     }
                     if (swapMining != address(0)) {
-                        ISwapMining(swapMining).swap(o.maker, o.fromTokenAddr, o.toTokenAddr, amountOutSum);
+                        ISwapMining(swapMining).swap(o.maker, o.fromTokenAddr, o.toTokenAddr, numArray[1]);
                     }
-                    allUserDiposit[o.toTokenAddr]=allUserDiposit[o.toTokenAddr].sub(amountOutSum);
+                    allUserDiposit[o.toTokenAddr]=allUserDiposit[o.toTokenAddr].sub(numArray[1]);
                 }
                 myTradeOrderBookExt.updateOrderInfo(
                     _tokenPair.orderMap[orderIndex].fromTokenAddr,
                     _tokenPair.orderMap[orderIndex].toTokenAddr,
                     orderIndex,
-                    amountOutSum,//成交数量
-                    amountInSum
+                    numArray[1],//成交数量
+                    numArray[0]
                 );
                 _tokenPair.orderMap[orderIndex].remainNumber=
-                    o.fromTokenNumber.sub(amountInSum);
+                    o.fromTokenNumber.sub(numArray[0]);
                 
             }
-            
         }else {
-            uint amountInSum=0;
-            uint amountOutSum=0;
-            uint toListIndex=_tokenPair.lastIndex[o.toTokenAddr];
+            uint[3] memory numArray=[0,0,_tokenPair.lastIndex[o.toTokenAddr]];
             uint256 tokenANum=o.fromTokenNumber;
-            while(toListIndex!=0&&tokenANum!=0){
-                Order storage bo=_tokenPair.orderMap[toListIndex];
+            while(numArray[2]!=0&&tokenANum!=0){
+                Order storage bo=_tokenPair.orderMap[numArray[2]];
                 if(o.fromTokenNumber.mul(bo.fromTokenNumber)==o.toTokenNumber.mul(bo.toTokenNumber)){
-                    tokenANum=o.fromTokenNumber.sub(amountInSum);
+                    tokenANum=o.fromTokenNumber.sub(numArray[0]);
                     uint256 toNum=getToNum(bo);
                     if(tokenANum>=toNum){
                         uint256 atoNum=toNum.mul(997).div(1000);
-                        if(isForEth[toListIndex]>0){
+                        if(isForEth[numArray[2]]>0){
                             IWETH(WETH).withdraw(atoNum);
                             TransferHelper.safeTransferETH(
                                 bo.maker,
@@ -881,26 +874,26 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                                 atoNum
                             );
                         }
-                        amountInSum=amountInSum.add(toNum);
-                        amountOutSum=amountOutSum.add(bo.remainNumber);
+                        numArray[0]=numArray[0].add(toNum);
+                        numArray[1]=numArray[1].add(bo.remainNumber);
                         myTradeOrderBookExt.updateOrderInfo(
-                            _tokenPair.orderMap[toListIndex].fromTokenAddr,
-                            _tokenPair.orderMap[toListIndex].toTokenAddr,
-                            toListIndex,
+                            _tokenPair.orderMap[numArray[2]].fromTokenAddr,
+                            _tokenPair.orderMap[numArray[2]].toTokenAddr,
+                            numArray[2],
                             atoNum,//成交数量
                             bo.remainNumber
                         );
-                        uint newBIndex=_tokenPair.orderNextSequence[toListIndex];
+                        uint newBIndex=_tokenPair.orderNextSequence[numArray[2]];
                         _tokenPair.lastIndex[o.toTokenAddr]=newBIndex;
                         if(newBIndex!=0){
-                        	_tokenPair.orderNextSequence[toListIndex]=0;
+                        	_tokenPair.orderNextSequence[numArray[2]]=0;
                         	_tokenPair.orderPreSequence[newBIndex]=0;
                         }
-                        _tokenPair.orderMap[toListIndex].remainNumber=0;
-                        toListIndex=newBIndex;
+                        _tokenPair.orderMap[numArray[2]].remainNumber=0;
+                        numArray[2]=newBIndex;
                     }else{
                         uint256 atoNum=tokenANum.mul(997).div(1000);
-                        if(isForEth[toListIndex]>0){
+                        if(isForEth[numArray[2]]>0){
                             IWETH(WETH).withdraw(atoNum);
                             TransferHelper.safeTransferETH(
                                 bo.maker,
@@ -914,15 +907,15 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                             );
                         }
                         
-                        amountInSum=o.fromTokenNumber;
+                        numArray[0]=o.fromTokenNumber;
                         uint256 tokenBNum=atoNum.mul(bo.fromTokenNumber) / bo.toTokenNumber;
-                        amountOutSum=amountOutSum.add(tokenBNum);
-                        _tokenPair.orderMap[toListIndex].remainNumber=
+                        numArray[1]=numArray[1].add(tokenBNum);
+                        _tokenPair.orderMap[numArray[2]].remainNumber=
                             bo.remainNumber.sub(tokenBNum);
                         myTradeOrderBookExt.updateOrderInfo(
-                            _tokenPair.orderMap[toListIndex].fromTokenAddr,
-                            _tokenPair.orderMap[toListIndex].toTokenAddr,
-                            toListIndex,
+                            _tokenPair.orderMap[numArray[2]].fromTokenAddr,
+                            _tokenPair.orderMap[numArray[2]].toTokenAddr,
+                            numArray[2],
                             atoNum,//成交数量
                             tokenBNum
                         );
@@ -932,35 +925,35 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                     break;
                 }
             }
-            if(amountInSum>0){
+            if(numArray[0]>0){
                 if(isForEth[orderIndex]>0){
-                    IWETH(WETH).withdraw(amountOutSum);
+                    IWETH(WETH).withdraw(numArray[1]);
                     TransferHelper.safeTransferETH(
                         o.maker,
-                        amountOutSum
+                        numArray[1]
                     );
                 }else{
                     TransferHelper.safeTransfer(
                         o.toTokenAddr,
                         o.maker,
-                        amountOutSum
+                        numArray[1]
                     );
                 }
                 
                 if (swapMining != address(0)) {
-                    ISwapMining(swapMining).swap(o.maker, o.fromTokenAddr, o.toTokenAddr, amountOutSum);
+                    ISwapMining(swapMining).swap(o.maker, o.fromTokenAddr, o.toTokenAddr, numArray[1]);
                 }
-                allUserDiposit[o.toTokenAddr]=allUserDiposit[o.toTokenAddr].sub(amountOutSum);
+                allUserDiposit[o.toTokenAddr]=allUserDiposit[o.toTokenAddr].sub(numArray[1]);
                 myTradeOrderBookExt.updateOrderInfo(
                     _tokenPair.orderMap[orderIndex].fromTokenAddr,
                     _tokenPair.orderMap[orderIndex].toTokenAddr,
                    orderIndex,
-                    amountOutSum,//成交数量
-                    amountInSum
+                    numArray[1],//成交数量
+                    numArray[0]
                 );    
                     
                 _tokenPair.orderMap[orderIndex].remainNumber=
-                    o.fromTokenNumber.sub(amountInSum);
+                    o.fromTokenNumber.sub(numArray[0]);
             }
          }
             
@@ -1233,7 +1226,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
     }
    
     // fetches and sorts the reserves for a pair
-    function getReserves(address tokenA, address tokenB) public view returns (uint reserveA, uint reserveB) {
+    function getReserves(address tokenA, address tokenB) internal view returns (uint reserveA, uint reserveB) {
         (address token0,) = OrderBookHelper.sortTokens(tokenA, tokenB);
         (uint reserve0, uint reserve1,) = IUniswapV2Pair(uniswapV2Factory.getPair(tokenA, tokenB)).getReserves();
         (reserveA, reserveB) = tokenA == token0 ? (reserve0, reserve1) : (reserve1, reserve0);
