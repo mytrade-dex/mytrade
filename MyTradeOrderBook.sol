@@ -389,10 +389,11 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         return true;
     }
     receive() external payable { 
-       
+        if(msg.value>0){
+            IWETH(WETH).deposit{value : msg.value}();
+        }
     }
-    fallback(bytes calldata _input) external payable returns (bytes memory _output){
-    }
+   
     function setFeeAddr(address _feeAddr)public onlyOwner {
         feeAddr=_feeAddr;
     }
@@ -577,7 +578,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         uint256 _targetOrderIndex,
         uint256 _fromTokenNumber,
         uint256 _toTokenNumber
-    )public payable returns(uint256 reserveNum,uint256 orderIndex) {
+    )public returns(uint256 reserveNum,uint256 orderIndex) {
         (reserveNum,orderIndex)=addOrder(_maker,_fromTokenAddr,WETH,_targetOrderIndex,_fromTokenNumber,_toTokenNumber);
         isForEth[orderIndex]=1;
     }
@@ -1053,25 +1054,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
             }
         }
     }
-   
 
-    function getPageOrderDetails(// 分页获取所有订单号
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr,// 买入token地址
-        uint256 _orderStartIndex,// 订单序号点
-        uint256 _records// 每次获取的个数
-    )external view returns(
-        address[] memory makers,//挂单者
-        address[] memory fromTokenAddrs,// 代币地址
-        uint256[] memory fromTokenNumbers,//初始挂单量
-        uint256[] memory timestamps,//初始挂单时间
-        uint256[] memory remainNumbers,//当前挂单存量
-        uint256[] memory toTokenNumbers,//初始意向代币目标金额
-        uint256[] memory toTokenSums//已经获取的金额
-    ){
-        return getOrderByIndexBatch(_fromTokenAddr,_toTokenAddr,
-            getPageOrders(_fromTokenAddr,_toTokenAddr,_orderStartIndex,_records));
-    }
     function getPageOrders(// 分页获取所有订单号
         address _fromTokenAddr,// 卖出token地址
         address _toTokenAddr,// 买入token地址
