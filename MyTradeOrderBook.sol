@@ -226,13 +226,6 @@ interface IMyTradeOrderBookExt{
         address _toTokenAddr,
         address _maker
     )external view returns(uint256[] memory cindexs);
-    function getPageOrdersForMaker(// 分页获取所有订单号
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr,// 买入token地址
-        address _maker,
-        uint256 _start,//开始位置
-        uint256 _num//数量
-    )external view returns(uint256[] memory indexs);
     function getOrderInfo(
         address _fromTokenAddr,
         address _toTokenAddr,
@@ -963,54 +956,6 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
             }
          }
             
-    }
-    
-    function getPageOrdersForMaker(// 分页获取所有订单号
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr,// 买入token地址
-        address _maker,
-        uint256 _start,//开始位置
-        uint256 _num//数量
-    )public view returns(uint256[] memory indexs){
-        return getPageOrdersForMaker(_fromTokenAddr,_toTokenAddr,_maker,_start,_num);
-    }
-
-    function getPageOrderDetailsForMaker(// 分页获取所有订单号
-        address _fromTokenAddr,// 卖出token地址
-        address _toTokenAddr,// 买入token地址
-        address _maker,
-        uint256 _start,//开始位置
-        uint256 _num//数量
-    )public view returns(
-        address[] memory fromTokenAddrs,// 代币地址
-        uint256[] memory fromTokenNumbers,//初始挂单量
-        uint256[] memory timestamps,//初始挂单时间
-        uint256[] memory remainNumbers,//当前挂单存量
-        uint256[] memory toTokenNumbers,//初始意向代币目标金额
-        uint256[] memory toTokenSums//已经获取的金额
-    ){
-        address pairAddr = uniswapV2Factory.getPair(_fromTokenAddr, _toTokenAddr);
-        if(pairAddr!=address(0)){
-            if(tokenPairIndexMap[pairAddr]!=0){
-                TokenPair storage tokenPair=tokenPairArray[tokenPairIndexMap[pairAddr]];
-                uint256[] memory _orderIndexs=getPageOrdersForMaker(_fromTokenAddr,_toTokenAddr,_maker,_start,_num);
-                uint256 l=_orderIndexs.length;
-                fromTokenAddrs=new address[](l);
-                fromTokenNumbers=new uint256[](l);
-                remainNumbers=new uint256[](l);
-                toTokenNumbers=new uint256[](l);
-                timestamps=new uint256[](l);
-                toTokenSums=new uint256[](l);
-                for(uint256 i=0;i<l;i++){
-                    Order memory o=tokenPair.orderMap[_orderIndexs[i]];
-                    fromTokenAddrs[i]=o.fromTokenAddr;
-                    toTokenNumbers[i]=o.toTokenNumber;
-                    fromTokenNumbers[i]=o.fromTokenNumber;
-                    remainNumbers[i]=o.remainNumber;
-                    (timestamps[i],toTokenSums[i])=myTradeOrderBookExt.getOrderInfo(o.fromTokenAddr,o.toTokenAddr,_orderIndexs[i]);
-                }
-            }
-        }
     }
 
     function getOrderByIndexBatch(
