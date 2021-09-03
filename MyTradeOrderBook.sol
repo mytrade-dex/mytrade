@@ -267,18 +267,11 @@ library OrderBookHelper{
         uint256 reserveA,
         uint256 reserveB
     ) internal pure returns(uint256 z){
-        uint256 k=reserveA.mul(reserveB);
-        uint256 j=k.mul(1000).div(997);
-        uint256 m=j.div(toNum);
-        uint256 p;
-        if(m>1){
-           p=m.mul(fromNum);
-        }else{
-           p=j.mul(fromNum).div(toNum);
-        }
-        uint256 q=k.mul(8973).div(3964107892);
+        uint256 p=reserveA.mul(reserveB).mul(fromNum).mul(1000)/997/toNum;
+        uint256 q=reserveA.mul(reserveA).mul(8973)/3964107892;
         uint256 x=sqrt(p.add(q));
-        uint256 y=reserveA.mul(1997).div(1994);
+
+        uint256 y=reserveA.mul(1997)/1994;
         if(x>y){
             z=x.sub(y).add(1);
         }else{
@@ -351,10 +344,9 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         mapping(uint256=> uint256) orderNextSequence;// 价格低的orderIndex=》价格高的orderIndex
         mapping(uint256=> uint256) orderPreSequence;// 价格高的orderIndex=》价格低的orderIndex
     }
+    mapping (address=> mapping (uint  => uint8)) isForEth;
     TokenPair[] tokenPairArray;// tokenPair数组
     mapping (address  => uint256) tokenPairIndexMap;// tokenPairAddr=>tokenPair数组下标
-   
-
     address immutable public flashLoan;
     constructor(
         address _WETH,
@@ -553,8 +545,6 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         }
     }
  
-    mapping (uint  => uint8) isForEth;
-    
     function addOrderWithETH(
         address _maker,
         address _toTokenAddr,
@@ -572,8 +562,23 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         uint256 _fromTokenNumber,
         uint256 _toTokenNumber
     )public returns(uint256 reserveNum,uint256 orderIndex) {
-        (reserveNum,orderIndex)=addOrder(_maker,_fromTokenAddr,WETH,_targetOrderIndex,_fromTokenNumber,_toTokenNumber);
-        isForEth[orderIndex]=1;
+        address pairAddr=uniswapV2Factory.getPair(_fromTokenAddr,WETH);
+        require(pairAddr!=address(0),"pairAddr not exist");
+        uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
+        if(tokenPairIndex== 0){//如果交易对不存在就新增一个
+            tokenPairIndex=tokenPairArray.length;
+            tokenPairArray.push();
+            tokenPairIndexMap[pairAddr]=tokenPairIndex;
+        }  
+        isForEth[_fromTokenAddr][tokenPairArray[tokenPairIndex].orderMaxIndex.add(1)]=2;
+        (reserveNum,orderIndex)=addOrder(
+            _maker,
+            _fromTokenAddr,
+            WETH,
+            _targetOrderIndex,
+            _fromTokenNumber,
+            _toTokenNumber
+        );
     }
     function addOrder(
         address _maker,
@@ -609,8 +614,8 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         require(pairAddr!=address(0),"pairAddr not exist");
         uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
         if(tokenPairIndex== 0){//如果交易对不存在就新增一个
+            tokenPairIndex=tokenPairArray.length;
             tokenPairArray.push();
-            tokenPairIndex=tokenPairArray.length-1 ;
             tokenPairIndexMap[pairAddr]=tokenPairIndex;
         }
         TokenPair storage _tokenPair=tokenPairArray[tokenPairIndex];
@@ -707,7 +712,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                             uint tonum=getToNum(bo);
                             uint tonumsFee=tonum.mul(997).div(1000);
                             if(tokenANum>=tonum){//如果全部成交也不够
-                                if(isForEth[numArray[2]]>0){
+                                if(isForEth[bo.toTokenAddr][numArray[2]]==2){
                                     IWETH(WETH).withdraw(tonumsFee);
                                     TransferHelper.safeTransferETH(
                                       bo.maker,
@@ -752,7 +757,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                             }else{
                                 //如果最后一条订单簿能成交够,部分成交订单簿
                                 uint256 atoNum=tokenANum.mul(997).div(1000);
-                                if(isForEth[numArray[2]]>0){
+                                if(isForEth[bo.toTokenAddr][numArray[2]]==2){
                                     IWETH(WETH).withdraw(atoNum);
                                     TransferHelper.safeTransferETH(
                                         bo.maker,
@@ -821,7 +826,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
             }
             if(numArray[0]>0){
                 if(numArray[1]>0){
-                    if(isForEth[orderIndex]>0){
+                    if(isForEth[o.toTokenAddr][orderIndex]==2){
                         IWETH(WETH).withdraw(numArray[1]);
                         TransferHelper.safeTransferETH(
                             o.maker,
@@ -860,7 +865,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                     uint256 toNum=getToNum(bo);
                     if(tokenANum>=toNum){
                         uint256 atoNum=toNum.mul(997).div(1000);
-                        if(isForEth[numArray[2]]>0){
+                        if(isForEth[bo.toTokenAddr][numArray[2]]==2){
                             IWETH(WETH).withdraw(atoNum);
                             TransferHelper.safeTransferETH(
                                 bo.maker,
@@ -892,7 +897,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                         numArray[2]=newBIndex;
                     }else{
                         uint256 atoNum=tokenANum.mul(997).div(1000);
-                        if(isForEth[numArray[2]]>0){
+                        if(isForEth[bo.toTokenAddr][numArray[2]]==2){
                             IWETH(WETH).withdraw(atoNum);
                             TransferHelper.safeTransferETH(
                                 bo.maker,
@@ -925,7 +930,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                 }
             }
             if(numArray[0]>0){
-                if(isForEth[orderIndex]>0){
+                if(isForEth[o.toTokenAddr][orderIndex]==2){
                     IWETH(WETH).withdraw(numArray[1]);
                     TransferHelper.safeTransferETH(
                         o.maker,
