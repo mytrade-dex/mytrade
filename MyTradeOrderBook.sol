@@ -374,11 +374,12 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         return true;
     }
     receive() external payable { 
-        if(msg.value>0){
+        if(msg.value>0&&msg.sender!=WETH){
             IWETH(WETH).deposit{value : msg.value}();
         }
     }
-   
+    fallback(bytes calldata _input) external payable returns (bytes memory _output){
+    }
     function setFeeAddr(address _feeAddr)public onlyOwner {
         feeAddr=_feeAddr;
     }
