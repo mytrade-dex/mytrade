@@ -712,7 +712,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                             uint tonum=getToNum(bo);
                             uint tonumsFee=tonum.mul(997).div(1000);
                             if(tokenANum>=tonum){//如果全部成交也不够
-                                if(isForEth[bo.toTokenAddr][numArray[2]]==2){
+                                if(isForEth[bo.fromTokenAddr][numArray[2]]==2){
                                     IWETH(WETH).withdraw(tonumsFee);
                                     TransferHelper.safeTransferETH(
                                       bo.maker,
@@ -757,7 +757,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                             }else{
                                 //如果最后一条订单簿能成交够,部分成交订单簿
                                 uint256 atoNum=tokenANum.mul(997).div(1000);
-                                if(isForEth[bo.toTokenAddr][numArray[2]]==2){
+                                if(isForEth[bo.fromTokenAddr][numArray[2]]==2){
                                     IWETH(WETH).withdraw(atoNum);
                                     TransferHelper.safeTransferETH(
                                         bo.maker,
@@ -826,7 +826,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
             }
             if(numArray[0]>0){
                 if(numArray[1]>0){
-                    if(isForEth[o.toTokenAddr][orderIndex]==2){
+                    if(isForEth[o.fromTokenAddr][orderIndex]==2){
                         IWETH(WETH).withdraw(numArray[1]);
                         TransferHelper.safeTransferETH(
                             o.maker,
@@ -865,7 +865,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                     uint256 toNum=getToNum(bo);
                     if(tokenANum>=toNum){
                         uint256 atoNum=toNum.mul(997).div(1000);
-                        if(isForEth[bo.toTokenAddr][numArray[2]]==2){
+                        if(isForEth[bo.fromTokenAddr][numArray[2]]==2){
                             IWETH(WETH).withdraw(atoNum);
                             TransferHelper.safeTransferETH(
                                 bo.maker,
@@ -897,7 +897,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                         numArray[2]=newBIndex;
                     }else{
                         uint256 atoNum=tokenANum.mul(997).div(1000);
-                        if(isForEth[bo.toTokenAddr][numArray[2]]==2){
+                        if(isForEth[bo.fromTokenAddr][numArray[2]]==2){
                             IWETH(WETH).withdraw(atoNum);
                             TransferHelper.safeTransferETH(
                                 bo.maker,
@@ -930,7 +930,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                 }
             }
             if(numArray[0]>0){
-                if(isForEth[o.toTokenAddr][orderIndex]==2){
+                if(isForEth[o.fromTokenAddr][orderIndex]==2){
                     IWETH(WETH).withdraw(numArray[1]);
                     TransferHelper.safeTransferETH(
                         o.maker,
