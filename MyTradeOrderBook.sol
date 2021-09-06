@@ -316,11 +316,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
     function setSwapMining(address _swapMininng) public onlyOwner {
         swapMining = _swapMininng;
     }
-    
     mapping (address  => uint) minLimitMap;
-    /**
-     *设置最小允许的数
-     */
     function setMinLimit(
         address _tokenAddr,
         uint _minLimit
@@ -328,7 +324,6 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         minLimitMap[_tokenAddr] = _minLimit;
         return true;
     }
-    
     struct Order{
         address maker;
         address fromTokenAddr;
