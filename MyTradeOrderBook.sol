@@ -199,10 +199,10 @@ interface IMyTradeOrderBookExt{
         uint _reserve0,
         uint _reserve1
     )external;
-    function cancelOrderWithNum(
-        address _fromTokenAddr,
-        address _toTokenAddr,
-        uint256 _orderIndex,
+    function cancelOrderWithNum(//按数量取消订单
+        address _fromTokenAddr,// 卖出token地址
+        address _toTokenAddr,// 买入token地址
+        uint256 _orderIndex,// 具体订单号（目前是订单的唯一性标识）
         uint256 _num
     )external;
 
@@ -316,7 +316,11 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
     function setSwapMining(address _swapMininng) public onlyOwner {
         swapMining = _swapMininng;
     }
+    //最小数量限额：0.1,可外部设置
     mapping (address  => uint) minLimitMap;
+    /**
+     *设置最小允许的数
+     */
     function setMinLimit(
         address _tokenAddr,
         uint _minLimit
@@ -324,24 +328,25 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         minLimitMap[_tokenAddr] = _minLimit;
         return true;
     }
+    
     struct Order{
         address maker;
         address fromTokenAddr;
         address toTokenAddr;
         uint256 remainNumber;
-        uint256 fromTokenNumber;
-        uint256 toTokenNumber;
+        uint256 fromTokenNumber;// 代币挂单金额
+        uint256 toTokenNumber;// 意向代币目标金额
     }
     struct TokenPair{
         uint256 orderMaxIndex;
         mapping(address=> uint256) lastIndex;
         mapping(uint256=> Order) orderMap;// orderIndex=》Order
-        mapping(uint256=> uint256) orderNextSequence;
-        mapping(uint256=> uint256) orderPreSequence;
+        mapping(uint256=> uint256) orderNextSequence;// 价格低的orderIndex=》价格高的orderIndex
+        mapping(uint256=> uint256) orderPreSequence;// 价格高的orderIndex=》价格低的orderIndex
     }
     mapping (address=> mapping (uint  => uint8)) isForEth;
-    TokenPair[] tokenPairArray;
-    mapping (address  => uint256) tokenPairIndexMap;
+    TokenPair[] tokenPairArray;// tokenPair数组
+    mapping (address  => uint256) tokenPairIndexMap;// tokenPairAddr=>tokenPair数组下标
     address immutable public flashLoan;
     constructor(
         address _WETH,
@@ -378,7 +383,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
     function setFeeAddr(address _feeAddr)public onlyOwner {
         feeAddr=_feeAddr;
     }
-    mapping (address  => uint256) public allUserDiposit;
+    mapping (address  => uint256) public allUserDiposit;//所有用户存款代币数量
     mapping (address  => mapping (address  => uint256)) public userDiposit;
     function deposit(address _token,uint _num) public {
         TransferHelper.safeTransferFrom(
@@ -421,20 +426,20 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
             _toTokenNumber
         );
     }
-    function cancelOrderForNumWithPreDiposit(
-        address _fromTokenAddr,
-        address _toTokenAddr,
-        uint256 _orderIndex,
+    function cancelOrderForNumWithPreDiposit(//按数量取消订单
+        address _fromTokenAddr,// 卖出token地址
+        address _toTokenAddr,// 买入token地址
+        uint256 _orderIndex,// 具体订单号（目前是订单的唯一性标识）
         uint256 _num
     )public nonReentrant returns(bool) {
         _cancelOrderForNum(_fromTokenAddr,_toTokenAddr,_orderIndex,_num);
         userDiposit[msg.sender][_fromTokenAddr] = userDiposit[msg.sender][_fromTokenAddr].add(_num);
         return true;
     }
-    function cancelOrderForNum(
-        address _fromTokenAddr,
-        address _toTokenAddr,
-        uint256 _orderIndex,
+    function cancelOrderForNum(//按数量取消订单
+        address _fromTokenAddr,// 卖出token地址
+        address _toTokenAddr,// 买入token地址
+        uint256 _orderIndex,// 具体订单号（目前是订单的唯一性标识）
         uint256 _num
     )public nonReentrant returns(bool) {
         _cancelOrderForNum(_fromTokenAddr,_toTokenAddr,_orderIndex,_num);
@@ -457,10 +462,10 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         }
         return true;
     }
-    function _cancelOrderForNum(
-        address _fromTokenAddr,
-        address _toTokenAddr,
-        uint256 _orderIndex,
+    function _cancelOrderForNum(//按数量取消订单
+        address _fromTokenAddr,// 卖出token地址
+        address _toTokenAddr,// 买入token地址
+        uint256 _orderIndex,// 具体订单号（目前是订单的唯一性标识）
         uint256 _num
     )internal{
         address pairAddr=uniswapV2Factory.getPair(_fromTokenAddr,_toTokenAddr);
@@ -561,7 +566,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         address pairAddr=uniswapV2Factory.getPair(_fromTokenAddr,WETH);
         require(pairAddr!=address(0),"pairAddr not exist");
         uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
-        if(tokenPairIndex== 0){
+        if(tokenPairIndex== 0){//如果交易对不存在就新增一个
             tokenPairIndex=tokenPairArray.length;
             tokenPairArray.push();
             tokenPairIndexMap[pairAddr]=tokenPairIndex;
@@ -609,7 +614,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         address pairAddr=uniswapV2Factory.getPair(_fromTokenAddr,_toTokenAddr);
         require(pairAddr!=address(0),"pairAddr not exist");
         uint256 tokenPairIndex=tokenPairIndexMap[pairAddr];
-        if(tokenPairIndex== 0){
+        if(tokenPairIndex== 0){//如果交易对不存在就新增一个
             tokenPairIndex=tokenPairArray.length;
             tokenPairArray.push();
             tokenPairIndexMap[pairAddr]=tokenPairIndex;
@@ -660,7 +665,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
 	            allUserDiposit[order.fromTokenAddr]=allUserDiposit[order.fromTokenAddr].add(reserveNum);
 	        }
 	        uint remainBal=IERC20(_fromTokenAddr).balanceOf(address(this));
-	        if(remainBal>allUserDiposit[order.fromTokenAddr]){
+	        if(remainBal>allUserDiposit[order.fromTokenAddr]){//剩余的是手续费
 	            TransferHelper.safeTransfer(
 	                order.fromTokenAddr,
 	                feeAddr,
@@ -683,31 +688,31 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         uint256 reserveA,
         uint256 reserveB
     ) internal {
-        if(o.fromTokenNumber.mul(reserveB)>o.toTokenNumber.mul(reserveA)){
+        if(o.fromTokenNumber.mul(reserveB)>o.toTokenNumber.mul(reserveA)){//如果流动池价格低于当前价格
             uint256 cInAmount=OrderBookHelper.getInAmount(
                 o.fromTokenNumber,o.toTokenNumber,reserveA,reserveB
-            );
+            );//计算达到当前订单价格需要付出的币数量
             if(cInAmount>o.fromTokenNumber){
                 cInAmount=o.fromTokenNumber;
             }
             uint[3] memory numArray=[0,0,_tokenPair.lastIndex[o.toTokenAddr]];
-            if(numArray[2]!=0){
+            if(numArray[2]!=0){//如果存在挂单
                 Order storage bom=_tokenPair.orderMap[numArray[2]];
                 Order memory bo=bom;
-                if(o.fromTokenNumber.mul(bo.fromTokenNumber)>=o.toTokenNumber.mul(bo.toTokenNumber)){
+                if(o.fromTokenNumber.mul(bo.fromTokenNumber)>=o.toTokenNumber.mul(bo.toTokenNumber)){//当前订单价格超过挂单的价格
                     uint256 newInAmount;
                     if(o.fromTokenNumber.mul(bo.fromTokenNumber)==o.toTokenNumber.mul(bo.toTokenNumber)){
                         newInAmount=cInAmount;
                     }else{
-                        newInAmount=OrderBookHelper.getInAmount(
+                        newInAmount=OrderBookHelper.getInAmount(//计算对手订单价格需要付出的币数量
                     	bo.toTokenNumber,bo.fromTokenNumber,reserveA,reserveB);
                     }
-                    if(cInAmount>=newInAmount){
+                    if(cInAmount>=newInAmount){//全部成交超过对手订单价格
                         uint256 tokenANum=o.fromTokenNumber.sub(newInAmount);
                         while(numArray[2]>0&&tokenANum>0){
                             uint tonum=getToNum(bo);
                             uint tonumsFee=tonum.mul(997).div(1000);
-                            if(tokenANum>=tonum){
+                            if(tokenANum>=tonum){//如果全部成交也不够
                                 if(bo.toTokenAddr==WETH&&isForEth[bo.fromTokenAddr][numArray[2]]==2){
                                     IWETH(WETH).withdraw(tonumsFee);
                                     TransferHelper.safeTransferETH(
@@ -721,17 +726,17 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                                         tonumsFee
                                     );
                                 }
-                                numArray[0]=numArray[0].add(tonum);
-                                numArray[1]=numArray[1].add(bo.remainNumber); 
+                                numArray[0]=numArray[0].add(tonum);//付出的
+                                numArray[1]=numArray[1].add(bo.remainNumber);//得到的 
                                 bom.remainNumber=0;
                                 myTradeOrderBookExt.updateOrderInfo(
                                     bo.fromTokenAddr,
                                     bo.toTokenAddr,
                                     numArray[2],
-                                    tonumsFee,
+                                    tonumsFee,//成交数量
                                     bo.remainNumber
                                 );
-                                uint newBIndex=_tokenPair.orderNextSequence[numArray[2]];
+                                uint newBIndex=_tokenPair.orderNextSequence[numArray[2]];//继续向上一单推进
 	                            _tokenPair.orderNextSequence[numArray[2]]=0;
                                 numArray[2]=newBIndex;
     	                        _tokenPair.lastIndex[o.toTokenAddr]=numArray[2];
@@ -739,19 +744,21 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
 	                                _tokenPair.orderPreSequence[numArray[2]]=0;
                                     bom=_tokenPair.orderMap[numArray[2]];
                                     bo=bom;
-                                    if(o.fromTokenNumber.mul(bo.fromTokenNumber)>o.toTokenNumber.mul(bo.toTokenNumber)){
+                                    if(o.fromTokenNumber.mul(bo.fromTokenNumber)>=o.toTokenNumber.mul(bo.toTokenNumber)){
                                         newInAmount=OrderBookHelper.getInAmount(
-                                        bo.toTokenNumber,bo.fromTokenNumber,reserveA,reserveB);
-                                    }
-                                    uint atemp=newInAmount.add(numArray[0]);
-                                    if(cInAmount>=newInAmount&&o.fromTokenNumber>atemp){
-                                        tokenANum=o.fromTokenNumber.sub(atemp);
+                                        bo.toTokenNumber,bo.fromTokenNumber,reserveA,reserveB);//计算对手订单价格需要付出的币数量
+	                                    uint atemp=newInAmount.add(numArray[0]);
+	                                    if(cInAmount>=newInAmount&&o.fromTokenNumber>atemp){//继续向上一条订单价格推进
+	                                        tokenANum=o.fromTokenNumber.sub(atemp);
+	                                    }else{
+	                                        tokenANum=0;//停止向上遍列
+	                                    }
                                     }else{
-                                        tokenANum=0;
+                                        tokenANum=0;//停止向上遍列
                                     }
                                 }
                             }else{
-                                
+                                //如果最后一条订单簿能成交够,部分成交订单簿
                                 uint256 atoNum=tokenANum.mul(997).div(1000);
                                 if(bo.toTokenAddr==WETH&&isForEth[bo.fromTokenAddr][numArray[2]]==2){
                                     IWETH(WETH).withdraw(atoNum);
@@ -774,10 +781,10 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                                     bo.fromTokenAddr,
                                     bo.toTokenAddr,
                                     numArray[2],
-                                    atoNum,
+                                    atoNum,//成交数量
                                     tokenBNum
                                 );
-                                tokenANum=0;
+                                tokenANum=0;//停止向上遍列
                             }
                         }
                     }
@@ -844,7 +851,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                     _tokenPair.orderMap[orderIndex].fromTokenAddr,
                     _tokenPair.orderMap[orderIndex].toTokenAddr,
                     orderIndex,
-                    numArray[1],
+                    numArray[1],//成交数量
                     numArray[0]
                 );
                 _tokenPair.orderMap[orderIndex].remainNumber=
@@ -880,7 +887,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                             _tokenPair.orderMap[numArray[2]].fromTokenAddr,
                             _tokenPair.orderMap[numArray[2]].toTokenAddr,
                             numArray[2],
-                            atoNum,
+                            atoNum,//成交数量
                             bo.remainNumber
                         );
                         uint newBIndex=_tokenPair.orderNextSequence[numArray[2]];
@@ -916,7 +923,7 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                             _tokenPair.orderMap[numArray[2]].fromTokenAddr,
                             _tokenPair.orderMap[numArray[2]].toTokenAddr,
                             numArray[2],
-                            atoNum,
+                            atoNum,//成交数量
                             tokenBNum
                         );
                         break;
@@ -947,8 +954,8 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                 myTradeOrderBookExt.updateOrderInfo(
                     _tokenPair.orderMap[orderIndex].fromTokenAddr,
                     _tokenPair.orderMap[orderIndex].toTokenAddr,
-                    orderIndex,
-                    numArray[1],
+                   orderIndex,
+                    numArray[1],//成交数量
                     numArray[0]
                 );    
                     
@@ -960,17 +967,17 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
     }
 
     function getOrderByIndexBatch(
-        address _fromTokenAddr,
-        address _toTokenAddr,
-        uint256[] memory _orderIndexs
+        address _fromTokenAddr,// 卖出token地址
+        address _toTokenAddr,// 买入token地址
+        uint256[] memory _orderIndexs//必须是已存在的orderIndex，否则会得不到正确结果
     )public view returns(
-        address[] memory makers,
-        address[] memory fromTokenAddrs,
-        uint256[] memory fromTokenNumbers,
-        uint256[] memory timestamps,
-        uint256[] memory remainNumbers,
-        uint256[] memory toTokenNumbers,
-        uint256[] memory toTokenSums
+        address[] memory makers,//挂单者
+        address[] memory fromTokenAddrs,// 代币地址
+        uint256[] memory fromTokenNumbers,//初始挂单量
+        uint256[] memory timestamps,//初始挂单时间
+        uint256[] memory remainNumbers,//当前挂单存量
+        uint256[] memory toTokenNumbers,//初始意向代币目标金额
+        uint256[] memory toTokenSums//已经获取的金额
     ){
         address pairAddr = uniswapV2Factory.getPair(_fromTokenAddr, _toTokenAddr);
         if(pairAddr!=address(0)){
@@ -1001,11 +1008,11 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
         }
     }
 
-    function getPageOrders(
-        address _fromTokenAddr,
-        address _toTokenAddr,
-        uint256 _orderStartIndex,
-        uint256 _records
+    function getPageOrders(// 分页获取所有订单号
+        address _fromTokenAddr,// 卖出token地址
+        address _toTokenAddr,// 买入token地址
+        uint256 _orderStartIndex,// 订单序号点
+        uint256 _records// 每次获取的个数
     )public view returns(uint256[] memory orderIndexs){
         address pairAddr = uniswapV2Factory.getPair(_fromTokenAddr, _toTokenAddr);
         if(pairAddr!=address(0)){
@@ -1025,14 +1032,14 @@ contract MyTradeOrderBook is Ownable,ReentrancyGuard{
                     if(_records!=1){
                         uint256[] memory newOrderIndexs=OrderBookHelper.joinNumber(
                             tokenPair.orderNextSequence[orderIndexs[0]],orderIndexs);
-                        uint256 ll=newOrderIndexs.length;
+                        uint256 ll=newOrderIndexs.length;//新数组长度
                         uint256 orderNextSequence=tokenPair.orderNextSequence[newOrderIndexs[ll-1]];
                         while(orderNextSequence>0&&ll<_records){
                             newOrderIndexs=OrderBookHelper.joinNumber(orderNextSequence,newOrderIndexs);
-                            if(ll==newOrderIndexs.length){
+                            if(ll==newOrderIndexs.length){//新数组长度没变停止
                                 break;
                             }
-                            ll=newOrderIndexs.length;
+                            ll=newOrderIndexs.length;//更新新数组长度
                             orderNextSequence=tokenPair.orderNextSequence[newOrderIndexs[ll-1]];
                         }
                         orderIndexs=newOrderIndexs;
